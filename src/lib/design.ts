@@ -44,7 +44,8 @@ export const SLIDER = {
  */
 export const WINDOW = {
   minScale: 0.34,
-  cornerRadius: 18,
+  /** macOS window radius. Applied at any size except full screen. */
+  cornerRadius: 12,
 } as const
 
 export const MENU_BAR = {

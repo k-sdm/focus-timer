@@ -17,6 +17,9 @@ export const windFragmentShader = /* glsl */ `
 
   ${noiseChunk}
 
+  /** The heading everything converges on once the air is still. */
+  const float REST_HEADING = 0.0;
+
   float fbm2(vec2 p) {
     return vnoise(p) * 0.65 + vnoise(p * 2.03 + 11.7) * 0.35;
   }
@@ -39,6 +42,9 @@ export const windFragmentShader = /* glsl */ `
 
     // Intensity falls away with the clock: the gale settles to still air.
     float gust = clamp(uProgress, 0.0, 1.0);
+    // How far the field has settled towards a single heading. Eased so the
+    // alignment gathers through the run rather than snapping at the end.
+    float settle = pow(1.0 - gust, 1.4);
     gust = mix(0.20, 1.0, gust * gust);
     // Never fully still: an idle board should still read as weather.
     float t = uTime * mix(0.30, 1.0, gust) * mix(0.70, 1.0, uRunning);
@@ -65,12 +71,18 @@ export const windFragmentShader = /* glsl */ `
         float churn = smoothstep(0.34, 0.06, length(c - eye)) * gust;
 
         float a = heading(c, t);
-        a += churn * (hash21(id + 3.7) - 0.5) * 5.4;
+        a += churn * (hash21(id + 3.7) - 0.5) * 5.4 * (1.0 - settle);
         // Gusts pass through as a travelling wave, so dashes turn in sequence
         // rather than all at once.
-        a += sin(dot(c, vec2(2.4, -1.7)) - t * 1.6) * 0.35 * gust;
+        a += sin(dot(c, vec2(2.4, -1.7)) - t * 1.6) * 0.35 * gust * (1.0 - settle);
 
-        speed = clamp(speed * gust + churn * 0.35, 0.0, 1.0);
+        // Air coming to rest: every reading swings round to the same heading,
+        // so the field ends as one set of parallel strokes.
+        a = mix(a, REST_HEADING, settle);
+
+        speed = clamp(speed * gust + churn * 0.35 * (1.0 - settle), 0.0, 1.0);
+        // Lengths even out as they align, so the end state is a regular field.
+        speed = mix(speed, 0.30, settle);
 
         // Length carries the speed; thickness stays put so the field reads as
         // one instrument taking readings rather than strokes of varying weight.

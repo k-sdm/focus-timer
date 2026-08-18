@@ -1,4 +1,4 @@
-import { memo } from 'react'
+import { memo, useCallback, useRef, useState } from 'react'
 import { Canvas } from '@react-three/fiber'
 import { PANEL, STAGE, WINDOW } from '../lib/design'
 import type { TimerFrame } from '../hooks/useTimer'
@@ -27,8 +27,52 @@ export const ShaderPanel = memo(function ShaderPanel({ frame, visualId, windowSi
   const scale = WINDOW.minScale + (1 - WINDOW.minScale) * windowSize
   const width = Math.round(SCREEN_WIDTH * scale)
   const height = Math.round(STAGE.height * scale)
-  // Chrome earns its keep only once the window has pulled off the edges.
-  const framed = 1 - windowSize
+  const fullscreen = windowSize > 0.999
+
+  // Offset from centre, in board pixels. Clamped on read rather than on write,
+  // so growing the window pulls it back onto the screen instead of stranding it.
+  const [offset, setOffset] = useState({ x: 0, y: 0 })
+  const drag = useRef({ active: false, startX: 0, startY: 0, originX: 0, originY: 0 })
+
+  const slackX = Math.max(0, (SCREEN_WIDTH - width) / 2)
+  const slackY = Math.max(0, (STAGE.height - height) / 2)
+  const x = Math.min(slackX, Math.max(-slackX, offset.x))
+  const y = Math.min(slackY, Math.max(-slackY, offset.y))
+
+  const onPointerDown = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
+      if (fullscreen) return
+      e.currentTarget.setPointerCapture(e.pointerId)
+      drag.current = {
+        active: true,
+        startX: e.clientX,
+        startY: e.clientY,
+        originX: x,
+        originY: y,
+      }
+    },
+    [fullscreen, x, y],
+  )
+
+  const onPointerMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    const d = drag.current
+    if (!d.active) return
+    // The board is uniformly scaled to fit, so pointer travel has to be divided
+    // back through that scale to stay under the cursor.
+    const board = e.currentTarget.getBoundingClientRect()
+    const boardScale = board.width / (e.currentTarget.offsetWidth || 1)
+    setOffset({
+      x: d.originX + (e.clientX - d.startX) / boardScale,
+      y: d.originY + (e.clientY - d.startY) / boardScale,
+    })
+  }, [])
+
+  const endDrag = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    drag.current.active = false
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId)
+    }
+  }, [])
 
   return (
     <div
@@ -36,14 +80,18 @@ export const ShaderPanel = memo(function ShaderPanel({ frame, visualId, windowSi
       style={{ left: PANEL.width, width: SCREEN_WIDTH, height: STAGE.height }}
     >
       <div
-        className="screen__window"
+        className={`screen__window${fullscreen ? ' is-fullscreen' : ''}`}
         style={{
           width,
           height,
-          borderRadius: WINDOW.cornerRadius * framed,
-          boxShadow: `0 ${18 * framed}px ${52 * framed}px rgba(0, 0, 0, ${0.14 * framed})`,
+          transform: `translate(${x}px, ${y}px)`,
+          borderRadius: fullscreen ? 0 : WINDOW.cornerRadius,
+          boxShadow: fullscreen ? 'none' : '0 16px 44px rgba(0, 0, 0, 0.16)',
         }}
-        aria-hidden="true"
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={endDrag}
+        onPointerCancel={endDrag}
       >
         <Canvas
           // Capped rather than uncapped: the foam evaluates every bubble per

@@ -1,8 +1,8 @@
 <!doctype html>
 <html><head><meta charset="utf-8"><title>verify</title>
 <style>body{margin:0;background:#222;font:10px monospace;color:#fff}
-#row{display:grid;grid-template-columns:1fr 1fr;gap:6px;padding:6px}figure{margin:0}figcaption{padding:4px 0}
-canvas{display:block;width:190px;height:228px;background:#fff}</style>
+#row{display:flex;flex-wrap:wrap;gap:6px;padding:6px}figure{margin:0}figcaption{padding:4px 0}
+canvas{display:block;width:120px;height:144px;background:#fff}</style>
 </head><body>
 <div class="row" id="row"></div>
 <script type="module">
@@ -10,6 +10,8 @@ import * as THREE from 'three'
 import { fullscreenVertexShader } from '/src/visuals/common.ts'
 import { growthSimShader, growthDisplayShader } from '/src/visuals/growthShaders.ts'
 import { windFragmentShader } from '/src/visuals/windShader.ts'
+import { liquidFragmentShader } from '/src/visuals/liquidShader.ts'
+import { gridFragmentShader } from '/src/visuals/gridShader.ts'
 import { foamFragmentShader, MAX_BUBBLES, MAX_POPS } from '/src/visuals/foamShader.ts'
 import { FoamSim } from '/src/visuals/foamSim.ts'
 
@@ -72,6 +74,23 @@ function growth(label, progress, steps, dispTime = 0, dispRunning = 1) {
   document.documentElement.dataset['p' + panelIndex] = label + ' => ' + h + ':' + url.length
 }
 
+function frag(label, shader, progress, time) {
+  const canvas = panel(label)
+  const gl = new THREE.WebGLRenderer({ canvas, antialias: false, alpha: false, preserveDrawingBuffer: true })
+  gl.setPixelRatio(1); gl.setSize(W, H, false)
+  const mat = new THREE.ShaderMaterial({
+    vertexShader: fullscreenVertexShader, fragmentShader: shader,
+    uniforms:{ uResolution:{value:new THREE.Vector2(W,H)}, uAspect:{value:ASPECT},
+      uTime:{value:time}, uProgress:{value:progress}, uUrgency:{value:1-progress},
+      uRunning:{value:1}, uArmed:{value:1}, uRemaining:{value:progress*1800}, uFinish:{value:0} },
+    depthTest:false, depthWrite:false })
+  const scene = new THREE.Scene(); scene.add(new THREE.Mesh(quad, mat))
+  gl.render(scene, cam)
+  const url = canvas.toDataURL(); let h = 0
+  for (let k = 0; k < url.length; k += 37) h = (h * 31 + url.charCodeAt(k)) | 0
+  document.documentElement.dataset['p' + panelIndex] = label + ' => ' + h + ':' + url.length
+}
+
 function wind(label, progress, time) {
   const canvas = panel(label)
   const gl = new THREE.WebGLRenderer({ canvas, antialias: false, alpha: false })
@@ -120,10 +139,15 @@ function foam(label, progress, seconds) {
 
 // Same simulated state, two display times, clock stopped: the wiggle must move
 // the drawing even though the reaction is frozen.
-growth('paused t=0', 1.0, 6000, 0, 0)
-growth('paused t=3', 1.0, 6000, 3, 0)
-growth('running p=1', 1.0, 6000, 0, 1)
-growth('running p=0.35', 0.35, 6000, 0, 1)
+frag('liquid p=1', liquidFragmentShader, 1.0, 9)
+frag('liquid p=0.45', liquidFragmentShader, 0.45, 9)
+frag('liquid p=0.05', liquidFragmentShader, 0.05, 9)
+frag('grid p=1', gridFragmentShader, 1.0, 5)
+frag('grid p=0.5', gridFragmentShader, 0.5, 5)
+frag('grid p=0.02', gridFragmentShader, 0.02, 5)
+frag('wind p=1', windFragmentShader, 1.0, 20)
+frag('wind p=0.5', windFragmentShader, 0.5, 20)
+frag('wind p=0.02', windFragmentShader, 0.02, 20)
 
 
 document.title = 'verify done'
