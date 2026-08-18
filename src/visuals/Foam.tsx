@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/exhaustive-deps */
 import { useEffect, useMemo, useRef } from 'react'
 import { useFrame, useThree } from '@react-three/fiber'
 import * as THREE from 'three'
@@ -12,10 +13,16 @@ import { FoamSim } from './foamSim'
 
 export function Foam({ frame }: VisualProps) {
   const size = useThree((s) => s.size)
+  // Device pixels, not CSS: antialiasing widths are derived from uResolution
+  // and would soften as the window shrinks if this were the CSS size.
+  const dpr = useThree((s) => s.viewport.dpr)
   const { update } = useTimerUniforms()
   const aspect = size.width / Math.max(size.height, 1)
 
-  const sim = useMemo(() => new FoamSim(aspect), [aspect])
+  // Built once. Resizing the window nudges the aspect by a rounding error, and
+  // rebuilding on that would scatter the cluster every time the slider moves.
+  const sim = useMemo(() => new FoamSim(aspect), [])
+  sim.aspect = aspect
   const material = useRef<THREE.ShaderMaterial>(null)
 
   const uniforms = useMemo(
@@ -49,7 +56,7 @@ export function Foam({ frame }: VisualProps) {
     const t = frame.current
     // Everything is written through the material: the uniforms object above is
     // only a template, and three clones it when the material is built.
-    const u = update(material.current, t, dt, size.width, size.height)
+    const u = update(material.current, t, dt, size.width * dpr, size.height * dpr)
     if (!u) return
 
     // A reset (or a scrub upward) refills the cluster.

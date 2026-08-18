@@ -6,11 +6,14 @@ import { windFragmentShader } from './windShader'
 
 export function Wind({ frame }: VisualProps) {
   const size = useThree((s) => s.size)
+  // Device pixels, not CSS: antialiasing widths are derived from uResolution
+  // and would soften as the window shrinks if this were the CSS size.
+  const dpr = useThree((s) => s.viewport.dpr)
   const { uniforms, update } = useTimerUniforms()
   const material = useRef<THREE.ShaderMaterial>(null)
 
   useFrame((_, delta) => {
-    update(material.current, frame.current, Math.min(delta, 0.05), size.width, size.height)
+    update(material.current, frame.current, Math.min(delta, 0.05), size.width * dpr, size.height * dpr)
   })
 
   return (

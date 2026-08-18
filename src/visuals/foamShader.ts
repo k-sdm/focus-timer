@@ -67,11 +67,11 @@ export const foamFragmentShader = /* glsl */ `
       else if (d < d2) { d2 = d; }
     }
 
-    float px = 1.0 / uResolution.y;
-    float aa = px * 1.3;
     float wallPx = uWall * uResolution.y;
 
-    // Outer membrane of the merged mass.
+    // Outer membrane of the merged mass. Antialiased against the field's own
+    // gradient, so the edge stays one pixel soft at any window size.
+    float aa = fwidth(mass) * 0.85;
     float shell = 1.0 - smoothstep(uWall - aa, uWall + aa, abs(mass));
 
     // Shared walls. The seam sits where the two nearest surfaces are

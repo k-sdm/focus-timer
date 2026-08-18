@@ -8,9 +8,17 @@ import {
   type VisualProps,
 } from './common'
 import { growthDisplayShader, growthSimShader } from './growthShaders'
+import { PANEL, STAGE } from '../lib/design'
 
 /** Simulation grid. Coarse on purpose: it sets the width of the ink line. */
 const SIM_HEIGHT = 480
+/**
+ * Sized from the board rather than the live canvas. The window keeps a fixed
+ * ratio at every size, so this is constant — and a grid that changed size would
+ * throw away the pattern and reseed each time the slider moved.
+ */
+const SCREEN_ASPECT = (STAGE.width - PANEL.width) / STAGE.height
+const SIM_WIDTH = Math.round(SIM_HEIGHT * SCREEN_ASPECT)
 /**
  * Gray-Scott needs thousands of iterations before it reads as structure, so the
  * frontier is advanced hard each frame. The passes are 400x480 — cheap.
@@ -120,10 +128,11 @@ function createSim(
 export function Growth({ frame }: VisualProps) {
   const gl = useThree((s) => s.gl)
   const size = useThree((s) => s.size)
+  // Device pixels, not CSS: antialiasing widths are derived from uResolution
+  // and would soften as the window shrinks if this were the CSS size.
+  const dpr = useThree((s) => s.viewport.dpr)
   const { update } = useTimerUniforms()
 
-  const aspect = size.width / Math.max(size.height, 1)
-  const simW = Math.max(2, Math.round(SIM_HEIGHT * aspect))
 
   /**
    * Allocated lazily rather than in a memo, and torn down only on a real
@@ -133,9 +142,8 @@ export function Growth({ frame }: VisualProps) {
   const simRef = useRef<Sim | null>(null)
   const getSim = (): Sim => {
     const current = simRef.current
-    if (current && current.width === simW) return current
-    current?.dispose()
-    const next = createSim(simW, SIM_HEIGHT, aspect, pickTargetType(gl))
+    if (current) return current
+    const next = createSim(SIM_WIDTH, SIM_HEIGHT, SCREEN_ASPECT, pickTargetType(gl))
     simRef.current = next
     return next
   }
@@ -166,7 +174,7 @@ export function Growth({ frame }: VisualProps) {
     // Written through the material: three clones the uniforms object it is
     // given, and in particular replaces render-target textures with null, so a
     // uState assigned to the template would never reach the shader.
-    const u = update(material.current, t, dt, size.width, size.height)
+    const u = update(material.current, t, dt, size.width * dpr, size.height * dpr)
     if (!u) return
 
     const sim = getSim()

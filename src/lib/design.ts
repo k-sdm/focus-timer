@@ -33,8 +33,28 @@ export const SLIDER = {
   width: 506,
   height: 21,
   knob: 21,
-  /** Knob position in the reference comp. */
-  initialValue: 0.373,
+  /** Opens at maximum: the visual fills the screen until you shrink it. */
+  initialValue: 1,
+} as const
+
+/**
+ * The right panel is a screen; the visual lives in a window on it. The window
+ * always keeps the panel's 5:6 ratio, so scaling it never changes the aspect
+ * the visuals are composed for.
+ */
+export const WINDOW = {
+  minScale: 0.34,
+  cornerRadius: 18,
+} as const
+
+export const MENU_BAR = {
+  right: 30,
+  top: 30,
+  icon: 26,
+  gap: 30,
+  fontSize: 29,
+  /** Height of the scrim that keeps the bar legible over a full-screen visual. */
+  scrimHeight: 118,
 } as const
 
 export const BUTTON = { x: 243, y: 1028, width: 506, height: 70, radius: 35 } as const

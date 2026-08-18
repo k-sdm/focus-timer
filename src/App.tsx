@@ -6,11 +6,13 @@ import { TimerPanel } from './components/TimerPanel'
 import { ShaderPanel } from './components/ShaderPanel'
 import { VisualSwitcher } from './components/VisualSwitcher'
 import { VISUALS } from './visuals'
+import { SLIDER } from './lib/design'
 
 export default function App() {
   const timer = useTimer(8 * 60)
   const scale = useStageScale()
   const [visualId, setVisualId] = useState(VISUALS[0].id)
+  const [windowSize, setWindowSize] = useState<number>(SLIDER.initialValue)
   const { toggle } = timer
 
   // Space starts and stops; 1-3 pick a visual.
@@ -46,9 +48,9 @@ export default function App() {
           } as React.CSSProperties
         }
       >
-        <ShaderPanel frame={timer.frame} visualId={visualId} />
+        <ShaderPanel frame={timer.frame} visualId={visualId} windowSize={windowSize} />
         <VisualSwitcher value={visualId} onChange={setVisualId} />
-        <TimerPanel timer={timer} />
+        <TimerPanel timer={timer} windowSize={windowSize} onWindowSize={setWindowSize} />
       </div>
     </div>
   )

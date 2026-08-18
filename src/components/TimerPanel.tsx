@@ -1,7 +1,7 @@
 import { BUTTON, CONTENT_BOX_WIDTH, TYPE, baselineTop } from '../lib/design'
 import { formatClock, type Timer } from '../hooks/useTimer'
 import { DonutTimer } from './DonutTimer'
-import { DurationSlider } from './DurationSlider'
+import { WindowSlider } from './WindowSlider'
 import { PanelChrome } from './PanelChrome'
 
 const ACTION_LABEL: Record<Timer['status'], string> = {
@@ -18,7 +18,13 @@ const TITLE: Record<Timer['status'], string> = {
   done: 'Time',
 }
 
-export function TimerPanel({ timer }: { timer: Timer }) {
+interface Props {
+  timer: Timer
+  windowSize: number
+  onWindowSize: (value: number) => void
+}
+
+export function TimerPanel({ timer, windowSize, onWindowSize }: Props) {
   const editable = timer.status !== 'running'
 
   return (
@@ -68,7 +74,7 @@ export function TimerPanel({ timer }: { timer: Timer }) {
         Duration
       </div>
 
-      <DurationSlider />
+      <WindowSlider value={windowSize} onChange={onWindowSize} />
 
       <button
         type="button"

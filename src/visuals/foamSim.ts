@@ -70,7 +70,8 @@ export class FoamSim {
   /** Seconds of simulated time; drives the drift and breathing phases. */
   time = 0
   private rand = mulberry(0x5eed)
-  private aspect = 1
+  /** Panel aspect; settable, so resizing the window never resets the cluster. */
+  aspect = 1
 
   constructor(aspect: number) {
     this.aspect = aspect

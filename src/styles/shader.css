@@ -1,13 +1,55 @@
-.shader-panel {
+.screen {
   position: absolute;
   top: 0;
-  background: #ffffff;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  background: var(--paper);
 }
 
-.shader-panel canvas {
+.screen__window {
+  position: relative;
+  overflow: hidden;
+  background: #ffffff;
+  transition: box-shadow 120ms linear;
+}
+
+.screen__window canvas {
   display: block;
   width: 100% !important;
   height: 100% !important;
+}
+
+/* Keeps the menu bar readable when a full-screen visual runs underneath it. */
+.menubar__scrim {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  background: linear-gradient(
+    to bottom,
+    rgba(255, 255, 255, 0.92) 0%,
+    rgba(255, 255, 255, 0.72) 45%,
+    rgba(255, 255, 255, 0) 100%
+  );
+  pointer-events: none;
+}
+
+.menubar {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  color: #16161a;
+  pointer-events: none;
+}
+
+.menubar__clock {
+  margin-left: 6px;
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', sans-serif;
+  font-weight: 400;
+  line-height: 1;
+  letter-spacing: 0.005em;
+  white-space: nowrap;
 }
 
 .switcher {

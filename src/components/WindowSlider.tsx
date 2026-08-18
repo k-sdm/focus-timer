@@ -1,13 +1,14 @@
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useRef } from 'react'
 import { SLIDER } from '../lib/design'
 
-/**
- * Presentational only. The comp calls for a slider under the ring but it has no
- * assigned behaviour yet, so the handle tracks the pointer and nothing else.
- * Wire `onChange` up here when the control gets a job.
- */
-export function DurationSlider() {
-  const [value, setValue] = useState<number>(SLIDER.initialValue)
+interface Props {
+  /** 0 = smallest window, 1 = the visual fills the screen. */
+  value: number
+  onChange: (value: number) => void
+}
+
+/** Sets how large a window the visual occupies on the right-hand screen. */
+export function WindowSlider({ value, onChange }: Props) {
   const trackRef = useRef<HTMLDivElement>(null)
   const dragging = useRef(false)
 
@@ -18,6 +19,7 @@ export function DurationSlider() {
       const el = trackRef.current
       if (!el) return value
       const box = el.getBoundingClientRect()
+      // The knob's own width is dead travel at each end.
       const half = (SLIDER.knob / 2 / SLIDER.width) * box.width
       const usable = box.width - half * 2
       if (usable <= 0) return value
@@ -30,17 +32,17 @@ export function DurationSlider() {
     (e: React.PointerEvent<HTMLDivElement>) => {
       e.currentTarget.setPointerCapture(e.pointerId)
       dragging.current = true
-      setValue(valueAt(e.clientX))
+      onChange(valueAt(e.clientX))
     },
-    [valueAt],
+    [valueAt, onChange],
   )
 
   const onPointerMove = useCallback(
     (e: React.PointerEvent<HTMLDivElement>) => {
       if (!dragging.current) return
-      setValue(valueAt(e.clientX))
+      onChange(valueAt(e.clientX))
     },
-    [valueAt],
+    [valueAt, onChange],
   )
 
   const endDrag = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
@@ -61,6 +63,11 @@ export function DurationSlider() {
         height: SLIDER.height,
         borderRadius: SLIDER.height / 2,
       }}
+      role="slider"
+      aria-label="Window size"
+      aria-valuemin={0}
+      aria-valuemax={100}
+      aria-valuenow={Math.round(value * 100)}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={endDrag}
