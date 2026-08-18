@@ -8,7 +8,7 @@ import { STROKE_HALF_WIDTH, VERTS_PER_SEGMENT, writeThickSegment } from './thick
 const COLS = 34
 const ROWS = 41
 /** Drifting attractors that pull the grid lines into knots. */
-const KNOTS = 7
+const KNOTS = 10
 
 const SEGMENTS = COLS * (ROWS - 1) + ROWS * (COLS - 1)
 
@@ -61,6 +61,7 @@ export function Lattice({ frame }: VisualProps) {
         noise3(k * 7.31 + 2.1, 0.5, s.time * 0.05 + k) * 0.9,
         noise3(0.5, k * 5.17 + 8.8, s.time * 0.045 + k * 3.3) * 1.0,
         0.16 + 0.12 * (0.5 + 0.5 * Math.sin(k * 2.4 + s.time * 0.2)),
+        k % 2 === 0 ? 1 : -1,
       )
     }
 
@@ -73,19 +74,25 @@ export function Lattice({ frame }: VisualProps) {
         let y = (r / (ROWS - 1) - 0.5) * 2.36
 
         // Base wobble so even the mid-tangle state reads as woven, not warped.
-        x += noise3(x * 2.1, y * 2.1, s.time * 0.07) * 0.05 * tangle
-        y += noise3(x * 2.3 + 9.7, y * 2.3, s.time * 0.06) * 0.05 * tangle
+        x += noise3(x * 2.1, y * 2.1, s.time * 0.07) * 0.09 * tangle
+        y += noise3(x * 2.3 + 9.7, y * 2.3, s.time * 0.06) * 0.09 * tangle
+        x += noise3(x * 5.4 + 3.3, y * 5.4, s.time * 0.11) * 0.035 * tangle
+        y += noise3(x * 5.9 + 17.2, y * 5.9, s.time * 0.09) * 0.035 * tangle
 
-        // The pinch: everything near a knot is drawn toward it.
         for (let k = 0; k < KNOTS; k++) {
-          const kx = knots[k * 3]
-          const ky = knots[k * 3 + 1]
-          const kr = knots[k * 3 + 2]
+          const kx = knots[k * 4]
+          const ky = knots[k * 4 + 1]
+          const kr = knots[k * 4 + 2]
+          const spin = knots[k * 4 + 3]
           const dx = kx - x
           const dy = ky - y
-          const pull = Math.exp(-(dx * dx + dy * dy) / (kr * kr)) * 0.82 * tangle
-          x += dx * pull
-          y += dy * pull
+          const pull = Math.exp(-(dx * dx + dy * dy) / (kr * kr)) * 0.92 * tangle
+
+          // Drawn toward the knot and wound around it. A pure pinch only
+          // gathers lines into a point; the rotation is what makes them cross
+          // each other and read as genuinely tangled.
+          x += dx * pull - dy * pull * 0.85 * spin
+          y += dy * pull + dx * pull * 0.85 * spin
         }
 
         verts[i] = x

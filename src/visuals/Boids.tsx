@@ -121,22 +121,12 @@ export function Boids({ frame }: VisualProps) {
       released.current = 0
     }
 
-    const wanted = Math.round((1 - Math.max(0, Math.min(1, t.progress))) * MAX_BIRDS)
+    const left = Math.max(0, Math.min(1, t.progress))
+    const wanted = Math.round((1 - left) * MAX_BIRDS)
 
-    // Time added mid-session calls birds back onto the ring rather than
-    // stranding them off frame.
-    while (released.current > wanted) {
-      released.current--
-      const bird = flock[released.current]
-      const a = Math.random() * Math.PI * 2
-      bird.free = false
-      bird.presence = 1
-      bird.x = Math.cos(a) * RING_RADIUS
-      bird.y = Math.sin(a) * RING_RADIUS + RING_CENTRE_Y
-      bird.vx = -Math.sin(a) * CRUISE
-      bird.vy = Math.cos(a) * CRUISE
-    }
-
+    // Departures are one-way within a session. Recalling birds meant putting
+    // them back on the ring from off frame, which reads as birds appearing out
+    // of nothing; adding time changes how the remaining flock flies instead.
     while (released.current < wanted) {
       const bird = flock[released.current]
       bird.free = true
@@ -203,8 +193,8 @@ export function Boids({ frame }: VisualProps) {
       const r = Math.hypot(nx, ny) || 1e-6
       b.vx += (nx / r) * (RING_RADIUS - r) * RING_PULL * dt
       b.vy += (ny / r) * (RING_RADIUS - r) * RING_PULL * dt
-      b.vx += (-ny / r) * TANGENT * dt
-      b.vy += (nx / r) * TANGENT * dt
+      b.vx += (-ny / r) * TANGENT * (0.5 + 0.7 * left) * dt
+      b.vy += (nx / r) * TANGENT * (0.5 + 0.7 * left) * dt
 
       // Damp only the component crossing the ring. Left undamped the spring and
       // the cruise speed trade energy and the flock spirals out of frame.
@@ -212,9 +202,12 @@ export function Boids({ frame }: VisualProps) {
       b.vx -= (nx / r) * radial * RADIAL_DAMPING * dt
       b.vy -= (ny / r) * radial * RADIAL_DAMPING * dt
 
+      // The clock sets the pace: urgent early, settling as it empties. This is
+      // what a mid-run change of time actually shows.
+      const cruise = CRUISE * (0.55 + 0.65 * left)
       const speed = Math.hypot(b.vx, b.vy) || 1e-6
-      b.vx = (b.vx / speed) * (speed + (CRUISE - speed) * 2.6 * dt)
-      b.vy = (b.vy / speed) * (speed + (CRUISE - speed) * 2.6 * dt)
+      b.vx = (b.vx / speed) * (speed + (cruise - speed) * 2.6 * dt)
+      b.vy = (b.vy / speed) * (speed + (cruise - speed) * 2.6 * dt)
 
       b.x += b.vx * dt
       b.y += b.vy * dt

@@ -26,7 +26,20 @@ const graphVertexShader = /* glsl */ `
 
   void main() {
     vAlpha = alpha;
-    gl_PointSize = uPointScale;
+    gl_Position = vec4(position.xyz, 1.0);
+  }
+`
+
+const nodeVertexShader = /* glsl */ `
+  attribute float alpha;
+  attribute float size;
+  varying float vAlpha;
+  uniform float uPointScale;
+
+  void main() {
+    vAlpha = alpha;
+    // Shrinks as it fades, so a departing node collapses rather than dissolving.
+    gl_PointSize = size * uPointScale * (0.35 + 0.65 * alpha);
     gl_Position = vec4(position.xyz, 1.0);
   }
 `
@@ -116,6 +129,7 @@ export function Graph({ frame }: VisualProps) {
     const nodeGeo = new THREE.BufferGeometry()
     nodeGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(NODES * 3), 3))
     nodeGeo.setAttribute('alpha', new THREE.BufferAttribute(new Float32Array(NODES), 1))
+    nodeGeo.setAttribute('size', new THREE.BufferAttribute(new Float32Array(NODES), 1))
     return { edgeGeo, nodeGeo }
   }, [edges.length])
 
@@ -219,16 +233,20 @@ export function Graph({ frame }: VisualProps) {
     const sx = 2 / aspect
     const nodePos = geometries.nodeGeo.getAttribute('position') as THREE.BufferAttribute
     const nodeAlpha = geometries.nodeGeo.getAttribute('alpha') as THREE.BufferAttribute
+    const nodeSize = geometries.nodeGeo.getAttribute('size') as THREE.BufferAttribute
     const np = nodePos.array as Float32Array
     const na = nodeAlpha.array as Float32Array
+    const ns = nodeSize.array as Float32Array
     for (let i = 0; i < NODES; i++) {
       np[i * 3] = nodes[i].x * sx
       np[i * 3 + 1] = nodes[i].y * 2
       np[i * 3 + 2] = 0
       na[i] = nodes[i].life
+      ns[i] = nodes[i].weight
     }
     nodePos.needsUpdate = true
     nodeAlpha.needsUpdate = true
+    nodeSize.needsUpdate = true
 
     const edgePos = geometries.edgeGeo.getAttribute('position') as THREE.BufferAttribute
     const edgeAlpha = geometries.edgeGeo.getAttribute('alpha') as THREE.BufferAttribute
@@ -254,7 +272,7 @@ export function Graph({ frame }: VisualProps) {
     edgePos.needsUpdate = true
     edgeAlpha.needsUpdate = true
 
-    nodeUniforms.uPointScale.value = 7.5 * dpr
+    nodeUniforms.uPointScale.value = 11 * dpr
   })
 
   return (
@@ -283,7 +301,7 @@ export function Graph({ frame }: VisualProps) {
 
       <points frustumCulled={false} geometry={geometries.nodeGeo}>
         <shaderMaterial
-          vertexShader={graphVertexShader}
+          vertexShader={nodeVertexShader}
           fragmentShader={nodeFragmentShader}
           uniforms={nodeUniforms}
           transparent
