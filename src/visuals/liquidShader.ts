@@ -4,12 +4,17 @@ export const SAND_COLS = 150
 export const SAND_ROWS = 180
 
 /**
- * Falling-sand cellular automaton on a Margolus (block) neighbourhood: the grid
- * is partitioned into 2x2 blocks whose origin alternates between (0,0) and
- * (1,1) each step, and grains are moved *within* a block. That partitioning is
- * what makes sand work on a GPU at all — every cell can decide its own next
- * value from its block alone, so no grain is ever duplicated or lost, which a
- * naive per-cell "look at the neighbour above" rule cannot guarantee.
+ * Falling-liquid cellular automaton on a Margolus (block) neighbourhood: the
+ * grid is partitioned into 2x2 blocks whose origin alternates between (0,0) and
+ * (1,1) each step, and drops move *within* a block. That partitioning is what
+ * makes this work on a GPU at all — every cell derives its own next value from
+ * its block alone, so no drop is duplicated or lost, which a naive per-cell
+ * "look at the neighbour above" rule cannot guarantee.
+ *
+ * What separates liquid from sand here is one extra rule: drops also move
+ * sideways into space alongside them. Sand only falls and slides onto a
+ * shoulder, so it heaps at its angle of repose; adding lateral flow is what
+ * makes a body find its own level and behave like water.
  */
 export const sandSimShader = /* glsl */ `
   precision highp float;
@@ -23,6 +28,13 @@ export const sandSimShader = /* glsl */ `
   /** Per-cell chance of a new grain appearing in the inlet. */
   uniform float uSpawn;
   uniform float uTime;
+  /**
+   * Increments every step, so the rain is not identical within one frame.
+   * Wrapped small deliberately: hash21 multiplies its input by ~456 before
+   * taking a fract, so a counter in the thousands exhausts float precision and
+   * the hash collapses to a constant.
+   */
+  uniform float uStep;
   uniform float uReset;
 
   ${noiseChunk}
@@ -60,8 +72,8 @@ export const sandSimShader = /* glsl */ `
     if (isGrain(tr) && isEmpty(br)) { br = 1.0; tr = 0.0; }
 
     // Then the slide onto a shoulder. Which side is tried first alternates per
-    // block, otherwise every pile leans the same way.
-    float coin = hash21(b + floor(uTime * 60.0) * 0.017);
+    // block, otherwise every heap leans the same way.
+    float coin = hash21(b + uStep * 0.0071);
     if (coin < 0.5) {
       if (isGrain(tl) && !isEmpty(bl) && isEmpty(br)) { br = 1.0; tl = 0.0; }
       else if (isGrain(tr) && !isEmpty(br) && isEmpty(bl)) { bl = 1.0; tr = 0.0; }
@@ -70,16 +82,35 @@ export const sandSimShader = /* glsl */ `
       else if (isGrain(tl) && !isEmpty(bl) && isEmpty(br)) { br = 1.0; tl = 0.0; }
     }
 
+    // Lateral flow — the rule that makes this water rather than sand. A swell
+    // travelling across the grid biases which way it goes, so the body sloshes
+    // and keeps a moving surface instead of settling to a dead flat line.
+    float swell = sin(uTime * 1.15 - b.x * 0.085) * 0.62;
+    float bias = hash21(b + uStep * 0.0139 + 5.0) * 2.0 - 1.0 + swell;
+    // Not every block flows every step, which keeps the surface broken up.
+    if (hash21(b + uStep * 0.0031 + 19.0) < 0.62) {
+      if (bias > 0.0) {
+        if (isGrain(bl) && isEmpty(br)) { br = 1.0; bl = 0.0; }
+        else if (isGrain(tl) && isEmpty(tr)) { tr = 1.0; tl = 0.0; }
+      } else {
+        if (isGrain(br) && isEmpty(bl)) { bl = 1.0; br = 0.0; }
+        else if (isGrain(tr) && isEmpty(tl)) { tl = 1.0; tr = 0.0; }
+      }
+    }
+
     float value = mix(mix(bl, br, local.x), mix(tl, tr, local.x), local.y);
     // Never write the wall sentinel back into the grid.
     value = isGrain(value) ? 1.0 : 0.0;
 
     // Inlet: a narrow column at the top, so the grid fills from a single
     // dropping stream the way a sand timer does.
-    // Three cells wide and one deep: a thread, not a shower. Widening it just
-    // scatters the same metered number of grains over more columns.
-    float inlet = step(abs(c.x - uGrid.x * 0.5), 1.0) * step(uGrid.y - 1.5, c.y);
-    if (inlet > 0.5 && value < 0.5 && hash21(c + uTime * 7.3) < uSpawn) {
+    // Rain: the inlet is the whole width, so the metered drops arrive scattered
+    // and individual rather than as one stream from a single column. Both top
+    // rows share a column hash, which makes each arrival a two-cell drop rather
+    // than a lone pixel.
+    float inlet = step(uGrid.y - 2.5, c.y);
+    if (inlet > 0.5 && isEmpty(value) &&
+        hash21(vec2(floor(c.x), uStep * 0.0113)) < uSpawn) {
       value = 1.0;
     }
 
@@ -108,7 +139,7 @@ export const sandDisplayShader = /* glsl */ `
 
     // Grains vary a little in size so the pile reads as loose material rather
     // than a screen-door pattern.
-    float radius = 0.38 + hash21(id) * 0.10;
+    float radius = 0.42 + hash21(id) * 0.09;
     float d = length(f);
     // One cell spans this many device pixels, which sets the edge softness.
     float aa = 1.15 / (uResolution.y / uGrid.y);

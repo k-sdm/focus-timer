@@ -9,12 +9,14 @@ import {
 } from './common'
 import { SAND_COLS, SAND_ROWS, sandDisplayShader, sandSimShader } from './liquidShader'
 
-const STEPS_PER_FRAME = 6
+// Lateral flow only travels one cell per step, so levelling needs a few more
+// passes than heaping did.
+const STEPS_PER_FRAME = 8
 const CELLS = SAND_COLS * SAND_ROWS
 /** Loose sand never packs to 100%; this is what "full" means here. */
 const PACKED = 0.94
-/** Cells the inlet can spawn into on a given step. */
-const INLET_CELLS = 3
+/** The inlet is the full width now, two rows deep. */
+const INLET_CELLS = SAND_COLS * 2
 
 interface Sim {
   targets: [THREE.WebGLRenderTarget, THREE.WebGLRenderTarget]
@@ -55,6 +57,7 @@ function createSim(): Sim {
       uOffset: { value: 0 },
       uSpawn: { value: 0 },
       uTime: { value: 0 },
+      uStep: { value: 0 },
       uReset: { value: 1 },
     },
     depthTest: false,
@@ -153,6 +156,10 @@ export function Liquid({ frame }: VisualProps) {
     for (let i = 0; i < steps; i++) {
       sim.material.uniforms.uState.value = sim.targets[sim.index].texture
       sim.material.uniforms.uOffset.value = i % 2
+      // Distinct per step, so the rain is not the same pattern eight times over.
+      // Wrapped, because the shader's hash loses all precision on a large input.
+      sim.material.uniforms.uStep.value =
+        ((sim.material.uniforms.uStep.value as number) + 1) % 4096
       gl.setRenderTarget(sim.targets[1 - sim.index])
       gl.render(sim.scene, sim.camera)
       sim.index = 1 - sim.index

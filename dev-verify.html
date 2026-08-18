@@ -2,7 +2,7 @@
 <html><head><meta charset="utf-8"><title>verify</title>
 <style>body{margin:0;background:#222;font:10px monospace;color:#fff}
 #row{display:flex;flex-wrap:wrap;gap:6px;padding:6px}figure{margin:0}figcaption{padding:4px 0}
-canvas{display:block;width:120px;height:144px;background:#fff}</style>
+canvas{display:block;width:175px;height:210px;background:#fff}</style>
 </head><body>
 <div class="row" id="row"></div>
 <script type="module">
@@ -10,8 +10,8 @@ import * as THREE from 'three'
 import { fullscreenVertexShader } from '/src/visuals/common.ts'
 import { growthSimShader, growthDisplayShader } from '/src/visuals/growthShaders.ts'
 import { windFragmentShader } from '/src/visuals/windShader.ts'
-import { liquidFragmentShader } from '/src/visuals/liquidShader.ts'
 import { gridFragmentShader } from '/src/visuals/gridShader.ts'
+import { SAND_COLS, SAND_ROWS, sandSimShader, sandDisplayShader } from '/src/visuals/liquidShader.ts'
 import { foamFragmentShader, MAX_BUBBLES, MAX_POPS } from '/src/visuals/foamShader.ts'
 import { FoamSim } from '/src/visuals/foamSim.ts'
 
@@ -139,15 +139,72 @@ function foam(label, progress, seconds) {
 
 // Same simulated state, two display times, clock stopped: the wiggle must move
 // the drawing even though the reaction is frozen.
-frag('liquid p=1', liquidFragmentShader, 1.0, 9)
-frag('liquid p=0.45', liquidFragmentShader, 0.45, 9)
-frag('liquid p=0.05', liquidFragmentShader, 0.05, 9)
-frag('grid p=1', gridFragmentShader, 1.0, 5)
-frag('grid p=0.5', gridFragmentShader, 0.5, 5)
-frag('grid p=0.02', gridFragmentShader, 0.02, 5)
-frag('wind p=1', windFragmentShader, 1.0, 20)
-frag('wind p=0.5', windFragmentShader, 0.5, 20)
-frag('wind p=0.02', windFragmentShader, 0.02, 20)
+/** Runs the liquid automaton exactly as the component does, but synchronously. */
+function water(label, endProgress, frames) {
+  const canvas = panel(label)
+  const gl = new THREE.WebGLRenderer({ canvas, antialias: false, alpha: false, preserveDrawingBuffer: true })
+  gl.setPixelRatio(1); gl.setSize(W, H, false)
+
+  const W2 = SAND_COLS, H2 = SAND_ROWS
+  const opts = { type: THREE.UnsignedByteType, format: THREE.RGBAFormat,
+    minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter,
+    wrapS: THREE.ClampToEdgeWrapping, wrapT: THREE.ClampToEdgeWrapping,
+    depthBuffer: false, stencilBuffer: false }
+  const rt = [new THREE.WebGLRenderTarget(W2, H2, opts), new THREE.WebGLRenderTarget(W2, H2, opts)]
+
+  const sim = new THREE.ShaderMaterial({
+    vertexShader: fullscreenVertexShader, fragmentShader: sandSimShader,
+    uniforms: { uState:{value:null}, uGrid:{value:new THREE.Vector2(W2,H2)},
+      uOffset:{value:0}, uSpawn:{value:0}, uTime:{value:0}, uStep:{value:0}, uReset:{value:1} },
+    depthTest:false, depthWrite:false })
+  const simScene = new THREE.Scene(); simScene.add(new THREE.Mesh(quad, sim))
+
+  for (const t of rt) { gl.setRenderTarget(t); gl.render(simScene, cam) }
+  sim.uniforms.uReset.value = 0
+
+  const CELLS = W2 * H2, PACKED = 0.94, INLET = W2 * 2, STEPS = 8
+  let idx = 0, grains = 0, step = 0
+  const rampFor = Math.floor(frames * 0.55)
+
+  for (let f = 0; f < frames; f++) {
+    const progress = 1 - Math.min(1, f / rampFor) * (1 - endProgress)
+    const target = CELLS * PACKED * (1 - progress)
+    const spawn = Math.min(1, Math.max(0, target - grains) / (INLET * STEPS))
+    grains = Math.min(CELLS * PACKED, grains + spawn * INLET * STEPS * 0.85)
+    sim.uniforms.uSpawn.value = spawn
+    sim.uniforms.uTime.value = f / 60
+
+    for (let i = 0; i < STEPS; i++) {
+      sim.uniforms.uState.value = rt[idx].texture
+      sim.uniforms.uOffset.value = i % 2
+      sim.uniforms.uStep.value = (step = (step + 1) % 4096)
+      gl.setRenderTarget(rt[1-idx]); gl.render(simScene, cam); idx = 1-idx
+    }
+  }
+
+  const disp = new THREE.ShaderMaterial({
+    vertexShader: fullscreenVertexShader, fragmentShader: sandDisplayShader,
+    uniforms:{ uState:{value:rt[idx].texture}, uGrid:{value:new THREE.Vector2(W2,H2)},
+      uResolution:{value:new THREE.Vector2(W,H)}, uFinish:{value:0} },
+    depthTest:false, depthWrite:false })
+  const dScene = new THREE.Scene(); dScene.add(new THREE.Mesh(quad, disp))
+  gl.setRenderTarget(null); gl.render(dScene, cam)
+
+  const buf = new Uint8Array(W2 * H2 * 4)
+  gl.readRenderTargetPixels(rt[idx], 0, 0, W2, H2, buf)
+  let live = 0, top = 0
+  for (let k = 0; k < W2 * H2; k++) {
+    if (buf[k * 4] > 127) { live++; if (k >= (H2 - 2) * W2) top++ }
+  }
+  document.documentElement.dataset['p' + panelIndex] =
+    label + ' cells=' + live + '/' + (W2 * H2) + ' topRows=' + top +
+    ' lastSpawn=' + sim.uniforms.uSpawn.value.toFixed(5) + ' grains=' + Math.round(grains)
+}
+
+water('water 25% (t=6s)', 0.75, 360)
+water('water 60% (t=10s)', 0.40, 600)
+water('water 90% (t=14s)', 0.10, 840)
+water('water 90% (t=18s)', 0.10, 1080)
 
 
 document.title = 'verify done'
