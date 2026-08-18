@@ -17,7 +17,9 @@ const W = 400, H = 480, ASPECT = W / H
 const quad = new THREE.PlaneGeometry(2, 2)
 const cam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1)
 
+let panelIndex = -1
 function panel(label) {
+  panelIndex++
   const fig = document.createElement('figure')
   const cap = document.createElement('figcaption')
   cap.textContent = label
@@ -28,9 +30,9 @@ function panel(label) {
   return canvas
 }
 
-function growth(label, progress, steps) {
+function growth(label, progress, steps, dispTime = 0, dispRunning = 1) {
   const canvas = panel(label)
-  const gl = new THREE.WebGLRenderer({ canvas, antialias: false, alpha: false })
+  const gl = new THREE.WebGLRenderer({ canvas, antialias: false, alpha: false, preserveDrawingBuffer: true })
   gl.setPixelRatio(1); gl.setSize(W, H, false)
 
   const opts = { type: THREE.HalfFloatType, format: THREE.RGBAFormat,
@@ -43,7 +45,7 @@ function growth(label, progress, steps) {
     vertexShader: fullscreenVertexShader, fragmentShader: growthSimShader,
     uniforms: { uState:{value:null}, uTexel:{value:new THREE.Vector2(1/W,1/H)},
       uAspect:{value:ASPECT}, uSeed:{value:1}, uFeed:{value:0.037},
-      uKill:{value:0.0605}, uDt:{value:1.0}, uRadius:{value:0.06+progress*0.78}, uScale:{value:1.0} },
+      uKill:{value:0.0605}, uDt:{value:1.0}, uRadius:{value:progress*0.84}, uScale:{value:1.0} },
     depthTest:false, depthWrite:false })
   const simScene = new THREE.Scene(); simScene.add(new THREE.Mesh(quad, simMat))
 
@@ -59,14 +61,15 @@ function growth(label, progress, steps) {
 
   const dispMat = new THREE.ShaderMaterial({
     vertexShader: fullscreenVertexShader, fragmentShader: growthDisplayShader,
-    uniforms:{ uState:{value:rt[i].texture}, uResolution:{value:new THREE.Vector2(W,H)}, uFinish:{value:0}, uScale:{value:1.0} },
+    uniforms:{ uState:{value:rt[i].texture}, uResolution:{value:new THREE.Vector2(W,H)}, uTime:{value:dispTime}, uRunning:{value:dispRunning}, uFinish:{value:0}, uScale:{value:1.0} },
     depthTest:false, depthWrite:false })
   const dispScene = new THREE.Scene(); dispScene.add(new THREE.Mesh(quad, dispMat))
   gl.setRenderTarget(null); gl.render(dispScene, cam)
 
-  const px = new Uint8Array(4)
-  gl.getContext().readPixels(W/2, H/2, 1, 1, gl.getContext().RGBA, gl.getContext().UNSIGNED_BYTE, px)
-  console.log(label, 'centre px', [...px])
+  const url = canvas.toDataURL()
+  let h = 0
+  for (let k = 0; k < url.length; k += 37) h = (h * 31 + url.charCodeAt(k)) | 0
+  document.documentElement.dataset['p' + panelIndex] = label + ' => ' + h + ':' + url.length
 }
 
 function wind(label, progress, time) {
@@ -115,12 +118,14 @@ function foam(label, progress, seconds) {
   gl.render(scene, cam)
 }
 
-foam('foam p=1.0', 1.0, 9)
-foam('foam p=1.0 t=20s', 1.0, 20)
-growth('growth p=1.0 (20k steps)', 1.0, 20000)
-growth('growth p=0.4 (20k steps)', 0.4, 20000)
-wind('wind t=24', 1.0, 24)
-wind('wind t=27 (3s later)', 1.0, 27)
+// Same simulated state, two display times, clock stopped: the wiggle must move
+// the drawing even though the reaction is frozen.
+growth('paused t=0', 1.0, 6000, 0, 0)
+growth('paused t=3', 1.0, 6000, 3, 0)
+growth('running p=1', 1.0, 6000, 0, 1)
+growth('running p=0.35', 0.35, 6000, 0, 1)
+
+
 document.title = 'verify done'
 </script>
 </body></html>

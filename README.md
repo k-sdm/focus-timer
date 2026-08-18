@@ -59,12 +59,25 @@ triangles where three bubbles meet. Bursting sets the radius spring's target to
 zero, throws an impulse and a wobble into the neighbours, and leaves an expanding
 ring behind.
 
-**Growth** (`growthShaders.ts`) is Gray-Scott at 400×480, 24 iterations a frame,
-thresholded hard to ink. Seeded from a single central blob — scattering reagent
-across the field would nucleate everywhere at once and lose the radial grain
-that comes from one front travelling outward. Running it backwards is a matter
-of shrinking the fed disc: outside it the kill rate climbs, so the frontier
-breaks into dots rather than fading.
+**Growth** (`growthShaders.ts`) is Gray-Scott at 400×480, thresholded hard to
+ink, and it genuinely runs backwards: it starts whole and is taken apart.
+
+The disc *is* the clock — `radius = progress × 0.84` — so the retraction spans
+exactly whatever duration is armed. Outside the fed radius the kill rate climbs,
+so the frontier breaks into dots rather than fading.
+
+The reaction only advances while the clock does, so pausing stops it dead. A
+frozen pattern would be a dead panel, so the display shader shims the *sampling*
+instead — a slow breath plus a low-frequency shimmer, which keeps the drawing
+alive without evolving it.
+
+Seeding a full disc is fussier than seeding a point. Two things it has to
+respect: reagent covering much of the disc consumes the substrate everywhere at
+once and the whole pattern dies inside a few hundred iterations, so the seed has
+to be sparse; and radial spokes — much the prettier seed, and closer to the
+reference — collapse in spacing towards the centre, merge into one mass there
+and die for the same reason. Concentric rings hold their spacing at every
+radius, so those are what it uses.
 
 **Wind** (`windShader.ts`) samples a heading from one fbm read per cell and draws
 a capsule along it, checking the 3×3 ring so dashes can overhang their cell.

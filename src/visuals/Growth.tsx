@@ -17,11 +17,13 @@ const SIM_HEIGHT = 480
  */
 const STEPS_PER_FRAME = 30
 /**
- * Gray-Scott needs a few thousand iterations before it reads as anything, so a
- * fresh seed is run forward in one burst. Without this the panel spends its
- * first seconds looking broken rather than looking empty.
+ * Iterations needed to relax a fresh seed into a settled labyrinth. Spread over
+ * frames rather than run in one burst: as a single block this is a visible
+ * hitch on switching to the visual, and as a per-frame trickle it reads as the
+ * pattern resolving into focus.
  */
-const PRIME_STEPS = 2600
+const PRIME_TOTAL = 6000
+const PRIME_PER_FRAME = 240
 
 interface Sim {
   width: number
@@ -32,6 +34,8 @@ interface Sim {
   camera: THREE.OrthographicCamera
   index: number
   seeded: boolean
+  /** Relaxation iterations still owed before the pattern is settled. */
+  prime: number
   dispose: () => void
 }
 
@@ -104,6 +108,7 @@ function createSim(
     camera: new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1),
     index: 0,
     seeded: false,
+    prime: 0,
     dispose() {
       targets.forEach((t) => t.dispose())
       material.dispose()
@@ -167,6 +172,10 @@ export function Growth({ frame }: VisualProps) {
     const sim = getSim()
     const prev = gl.getRenderTarget()
 
+    // The disc is the clock: full at the armed duration, gone at the buzzer.
+    // Whatever duration is set, the retraction spans exactly that span.
+    sim.material.uniforms.uRadius.value = (u.uProgress.value as number) * 0.84
+
     // Reseed on the first frame after allocation, and on a reset.
     const reseeding = !sim.seeded || t.progress > lastProgress.current + 0.02
     if (reseeding) {
@@ -182,12 +191,10 @@ export function Growth({ frame }: VisualProps) {
       sim.material.uniforms.uSeed.value = 0
       sim.seeded = true
       sim.index = 0
+      sim.prime = PRIME_TOTAL
     }
     lastProgress.current = t.progress
 
-    // The fed disc contracts with the clock. It stays oversized while idle so
-    // the pattern can fill the panel before anything starts retreating.
-    sim.material.uniforms.uRadius.value = 0.06 + (u.uProgress.value as number) * 0.78
     // A touch more kill as time runs out: the frontier breaks into dots sooner.
     // The slow drift on top keeps the labyrinth reorganising once it has filled
     // its disc — Gray-Scott settles into a near-steady state otherwise, and an
@@ -197,7 +204,16 @@ export function Growth({ frame }: VisualProps) {
     sim.material.uniforms.uKill.value =
       0.0605 + (u.uUrgency.value as number) * 0.0022 + Math.cos(clock * 0.062) * 0.0009
 
-    const steps = reseeding ? PRIME_STEPS : STEPS_PER_FRAME
+    // Finish settling first; after that the reaction only advances while the
+    // clock does, so pausing genuinely stops it rather than slowing it down.
+    let steps = 0
+    if (sim.prime > 0) {
+      steps = Math.min(PRIME_PER_FRAME, sim.prime)
+      sim.prime -= steps
+    } else if (t.running) {
+      steps = STEPS_PER_FRAME
+    }
+
     for (let i = 0; i < steps; i++) {
       sim.material.uniforms.uState.value = sim.targets[sim.index].texture
       gl.setRenderTarget(sim.targets[1 - sim.index])

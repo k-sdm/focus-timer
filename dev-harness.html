@@ -1,15 +1,15 @@
 <!doctype html>
 <html><head><meta charset="utf-8"><title>harness</title>
 <style>body{margin:0;background:#222;color:#fff;font:11px monospace}
-#grid{display:grid;grid-template-columns:repeat(4,1fr);gap:4px;padding:4px}
-.host{width:100%;aspect-ratio:1000/1200;background:#fff}
+#grid{display:flex;flex-wrap:wrap;gap:4px;padding:4px}
+.host{width:180px;height:216px;background:#fff}
 #log{padding:6px;white-space:pre-wrap;color:#ff8}</style>
 </head><body>
 <div id="grid">
-  <div><div class="host" id="h0"></div><div>0 probe</div></div>
-  <div><div class="host" id="h1"></div><div>1 foam</div></div>
-  <div><div class="host" id="h2"></div><div>2 wind</div></div>
-  <div><div class="host" id="h3"></div><div>3 growth</div></div>
+  <div><div class="host" id="h0"></div><div>0 growth p=1 paused</div></div>
+  <div><div class="host" id="h1"></div><div>1 growth p=.45 run</div></div>
+  <div><div class="host" id="h2"></div><div>2 growth p=.12 run</div></div>
+  <div><div class="host" id="h3"></div><div>3 wind</div></div>
 </div>
 <div id="log">booting…</div>
 <script type="module">
@@ -24,10 +24,11 @@ import { Foam } from '/src/visuals/Foam.tsx'
 const log = (m) => { document.getElementById('log').textContent += '\n' + m }
 window.addEventListener('error', e => log('ERROR: ' + e.message))
 
-const frame = { current: {
-  remaining: 1800, duration: 1800, progress: 1, urgency: 0,
-  running: true, sinceFinish: 1e6,
-} }
+const mkFrame = (progress, running) => ({ current: {
+  remaining: 1800 * progress, duration: 1800, progress,
+  urgency: 1 - progress, running, sinceFinish: 1e6,
+} })
+const frame = mkFrame(1, true)
 
 // Minimal control: same hook, same material wiring, shader depends only on uTime.
 const PROBE = `precision highp float;
@@ -64,14 +65,20 @@ function Probe() {
     }))
 }
 
-const canvas = (Visual) => React.createElement(
+const canvas = (Visual, f) => React.createElement(
   Canvas,
   { frameloop: 'never', dpr: 1, gl: { antialias: false, alpha: false, preserveDrawingBuffer: true }, flat: true },
-  React.createElement(Visual, { frame }),
+  React.createElement(Visual, { frame: f }),
 )
 
-;[Probe, Foam, Wind, Growth].forEach((V, i) =>
-  createRoot(document.getElementById('h' + i)).render(canvas(V)))
+const cases = [
+  [Growth, mkFrame(1.0, false)],   // armed, paused: full disc, frozen, wiggling
+  [Growth, mkFrame(0.45, true)],   // mid-run: retracted disc
+  [Growth, mkFrame(0.12, true)],   // nearly done
+  [Wind,   mkFrame(1.0, true)],
+]
+cases.forEach(([V, f], i) =>
+  createRoot(document.getElementById('h' + i)).render(canvas(V, f)))
 
 let t = 1000, frames = 0
 setTimeout(() => {

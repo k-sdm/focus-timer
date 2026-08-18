@@ -43,12 +43,28 @@ export const growthSimShader = /* glsl */ `
 
     if (uSeed > 0.5) {
       // Substrate everywhere, a pinch of reagent in the middle to grow from.
-      // Seeded only in the middle. Scattering reagent across the whole field
-      // would nucleate everywhere at once and lose the radial grain that comes
-      // from a single front travelling outwards.
-      float blob = 1.0 - smoothstep(0.025, 0.070, length(p));
-      float jitter = hash21(vUv * 733.0) * 0.35 + 0.65;
-      gl_FragColor = vec4(1.0, clamp(blob * 0.62 * jitter * uScale, 0.0, 1.0), 0.0, 1.0);
+      // The whole disc is seeded at once, already carrying structure. Growing
+      // it out from a central blob took tens of thousands of iterations before
+      // it filled, which is the wrong way round for a piece that is supposed to
+      // start whole and be taken apart.
+      //
+      // Rings close to the pattern's own wavelength, bent by a little noise,
+      // give the relaxation a radial grain to follow — a plain noise seed
+      // relaxes into isotropic mush and loses the spokes entirely.
+      float rad = length(p);
+      float inside = 1.0 - smoothstep(uRadius * 0.5 - 0.045, uRadius * 0.5, rad);
+      // Thin rings, not bands. Reagent covering half the disc consumes the
+      // substrate everywhere at once and the whole thing dies inside a few
+      // hundred iterations; sparse seeds leave A intact to grow into.
+      // Concentric rings, bent by a little noise. Radial spokes are the prettier
+      // seed and read closer to the reference, but their spacing collapses
+      // towards the middle: the reagent merges into one mass there, consumes the
+      // substrate and the whole disc dies inside a few hundred iterations.
+      // Rings hold their spacing at every radius, so they survive.
+      float rings = smoothstep(0.62, 0.98, sin(rad * 300.0 + vnoise(p * 6.0) * 3.2));
+      float speck = step(0.994, hash21(vUv * 733.0));
+      float seeded = inside * clamp(rings * 0.5 + speck * 0.5, 0.0, 0.55);
+      gl_FragColor = vec4(1.0, clamp(seeded * uScale, 0.0, 1.0), 0.0, 1.0);
       return;
     }
 
@@ -80,13 +96,28 @@ export const growthDisplayShader = /* glsl */ `
 
   uniform sampler2D uState;
   uniform vec2  uResolution;
+  uniform float uTime;
+  uniform float uRunning;
   uniform float uFinish;
   uniform float uScale;
 
   ${noiseChunk}
 
   void main() {
-    float b = texture2D(uState, vUv).y / uScale;
+    // While the clock is stopped the reaction is frozen, so the movement has to
+    // come from the sampling instead: a slow breath plus a low-frequency
+    // shimmer, which keeps the drawing alive without evolving it.
+    float still = 1.0 - clamp(uRunning, 0.0, 1.0);
+    float t = uTime;
+
+    vec2 uv = vUv;
+    vec2 shimmer = vec2(
+      sin(uv.y * 9.0 + t * 0.85) + 0.55 * sin(uv.y * 17.0 - t * 0.6),
+      cos(uv.x * 8.0 - t * 0.7) + 0.55 * cos(uv.x * 15.0 + t * 0.48));
+    uv += shimmer * 0.0034 * still;
+    uv = (uv - 0.5) * (1.0 + sin(t * 0.45) * 0.007 * still) + 0.5;
+
+    float b = texture2D(uState, uv).y / uScale;
 
     // Hard threshold, antialiased against the local gradient — the reference is
     // ink, not a heightmap.
