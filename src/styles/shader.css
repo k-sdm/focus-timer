@@ -1,0 +1,11 @@
+.shader-panel {
+  position: absolute;
+  top: 0;
+  background: var(--paper);
+}
+
+.shader-panel canvas {
+  display: block;
+  width: 100% !important;
+  height: 100% !important;
+}

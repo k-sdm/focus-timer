@@ -1,0 +1,97 @@
+import { BUTTON, CONTENT_BOX_WIDTH, TYPE, baselineTop } from '../lib/design'
+import { formatClock, type Timer } from '../hooks/useTimer'
+import { DonutTimer } from './DonutTimer'
+import { DurationSlider } from './DurationSlider'
+import { PanelChrome } from './PanelChrome'
+
+const ACTION_LABEL: Record<Timer['status'], string> = {
+  idle: 'Start',
+  running: 'Pause',
+  paused: 'Resume',
+  done: 'Reset',
+}
+
+const TITLE: Record<Timer['status'], string> = {
+  idle: 'Set your focus timer',
+  running: 'Stay with it',
+  paused: 'Paused',
+  done: 'Time',
+}
+
+export function TimerPanel({ timer }: { timer: Timer }) {
+  const editable = timer.status !== 'running'
+
+  return (
+    <section className="panel" aria-label="Focus timer">
+      <PanelChrome />
+
+      <h1
+        className="panel__title"
+        style={{
+          width: CONTENT_BOX_WIDTH,
+          top: baselineTop(TYPE.title.baseline, TYPE.title.size),
+          fontSize: TYPE.title.size,
+          fontWeight: TYPE.title.weight,
+        }}
+      >
+        {TITLE[timer.status]}
+      </h1>
+
+      <DonutTimer
+        remaining={timer.remaining}
+        editable={editable}
+        onScrub={timer.setDuration}
+      />
+
+      <div
+        className="panel__readout"
+        style={{
+          width: CONTENT_BOX_WIDTH,
+          top: baselineTop(TYPE.readout.baseline, TYPE.readout.size),
+          fontSize: TYPE.readout.size,
+          fontWeight: TYPE.readout.weight,
+        }}
+        aria-live="off"
+      >
+        {formatClock(timer.remaining)}
+      </div>
+
+      <div
+        className="panel__label"
+        style={{
+          width: CONTENT_BOX_WIDTH,
+          top: baselineTop(TYPE.label.baseline, TYPE.label.size),
+          fontSize: TYPE.label.size,
+          fontWeight: TYPE.label.weight,
+        }}
+      >
+        Duration
+      </div>
+
+      <DurationSlider />
+
+      <button
+        type="button"
+        className="panel__action"
+        onClick={timer.toggle}
+        style={{
+          left: BUTTON.x,
+          top: BUTTON.y,
+          width: BUTTON.width,
+          height: BUTTON.height,
+          borderRadius: BUTTON.radius,
+        }}
+      >
+        <span
+          style={{
+            top: baselineTop(TYPE.button.baseline, TYPE.button.size) - BUTTON.y,
+            fontSize: TYPE.button.size,
+            fontWeight: TYPE.button.weight,
+          }}
+        >
+          {ACTION_LABEL[timer.status]}
+        </span>
+      </button>
+    </section>
+  )
+}

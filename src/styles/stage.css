@@ -1,0 +1,25 @@
+.stage-viewport {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  background: #0b0b0b;
+}
+
+/* The app is a fixed 2000 x 1200 artboard. Everything inside is authored in
+   absolute artboard pixels; the whole board is uniformly scaled to fit. */
+.stage {
+  /* Centred by transform rather than by layout: the board is routinely larger
+     than the viewport, and centred layout falls back to start alignment when
+     the item overflows. */
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: var(--stage-w);
+  height: var(--stage-h);
+  transform-origin: center center;
+  transform: translate(-50%, -50%) scale(var(--stage-scale, 1));
+  background: var(--paper);
+  overflow: hidden;
+  user-select: none;
+  -webkit-user-select: none;
+}

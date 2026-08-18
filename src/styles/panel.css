@@ -1,0 +1,98 @@
+.panel {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 1000px;
+  height: 1200px;
+  background: var(--ink);
+  overflow: hidden;
+}
+
+.panel > * {
+  position: absolute;
+}
+
+.chrome {
+  left: 0;
+  top: 0;
+  pointer-events: none;
+}
+
+/* Content is centred on x=496, so a left-aligned box of 2*496 does the work. */
+.panel__title,
+.panel__readout,
+.panel__label {
+  left: 0;
+  margin: 0;
+  line-height: 1;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.panel__title,
+.panel__label {
+  color: var(--muted);
+}
+
+.panel__readout {
+  color: var(--white);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum' 1;
+  pointer-events: none;
+}
+
+.donut {
+  position: absolute;
+  touch-action: none;
+  overflow: visible;
+}
+
+.donut:active {
+  cursor: grabbing;
+}
+
+.slider {
+  background: var(--muted);
+  touch-action: none;
+  cursor: pointer;
+}
+
+.slider__knob {
+  position: absolute;
+  left: 0;
+  top: 0;
+  border-radius: 50%;
+  background: var(--white);
+  pointer-events: none;
+}
+
+.panel__action {
+  display: block;
+  padding: 0;
+  border: 0;
+  background: var(--white);
+  color: var(--muted);
+  cursor: pointer;
+  transition: transform 140ms ease, opacity 140ms ease;
+}
+
+.panel__action > span {
+  position: absolute;
+  left: 0;
+  width: 100%;
+  line-height: 1;
+  text-align: center;
+}
+
+.panel__action:hover {
+  opacity: 0.92;
+}
+
+.panel__action:active {
+  transform: scale(0.985);
+}
+
+.panel__action:focus-visible {
+  outline: 3px solid var(--white);
+  outline-offset: 6px;
+}
