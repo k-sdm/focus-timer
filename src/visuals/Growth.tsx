@@ -1,7 +1,12 @@
 import { useEffect, useMemo, useRef } from 'react'
 import { useFrame, useThree } from '@react-three/fiber'
 import * as THREE from 'three'
-import { fullscreenVertexShader, useTimerUniforms, type VisualProps } from './common'
+import {
+  createTimerUniforms,
+  fullscreenVertexShader,
+  useTimerUniforms,
+  type VisualProps,
+} from './common'
 import { growthDisplayShader, growthSimShader } from './growthShaders'
 
 /** Simulation grid. Coarse on purpose: it sets the width of the ink line. */
@@ -110,7 +115,7 @@ function createSim(
 export function Growth({ frame }: VisualProps) {
   const gl = useThree((s) => s.gl)
   const size = useThree((s) => s.size)
-  const { uniforms, update } = useTimerUniforms()
+  const { update } = useTimerUniforms()
 
   const aspect = size.width / Math.max(size.height, 1)
   const simW = Math.max(2, Math.round(SIM_HEIGHT * aspect))
@@ -140,19 +145,24 @@ export function Growth({ frame }: VisualProps) {
 
   const display = useMemo(
     () => ({
-      ...uniforms,
+      ...createTimerUniforms(),
       uState: { value: null as THREE.Texture | null },
       uScale: { value: 1 },
     }),
-    [uniforms],
+    [],
   )
+  const material = useRef<THREE.ShaderMaterial>(null)
 
   const lastProgress = useRef(1)
 
   useFrame((_, delta) => {
     const dt = Math.min(delta, 0.05)
     const t = frame.current
-    update(t, dt, size.width, size.height)
+    // Written through the material: three clones the uniforms object it is
+    // given, and in particular replaces render-target textures with null, so a
+    // uState assigned to the template would never reach the shader.
+    const u = update(material.current, t, dt, size.width, size.height)
+    if (!u) return
 
     const sim = getSim()
     const prev = gl.getRenderTarget()
@@ -177,9 +187,15 @@ export function Growth({ frame }: VisualProps) {
 
     // The fed disc contracts with the clock. It stays oversized while idle so
     // the pattern can fill the panel before anything starts retreating.
-    sim.material.uniforms.uRadius.value = 0.06 + uniforms.uProgress.value * 0.78
+    sim.material.uniforms.uRadius.value = 0.06 + (u.uProgress.value as number) * 0.78
     // A touch more kill as time runs out: the frontier breaks into dots sooner.
-    sim.material.uniforms.uKill.value = 0.0605 + uniforms.uUrgency.value * 0.0022
+    // The slow drift on top keeps the labyrinth reorganising once it has filled
+    // its disc — Gray-Scott settles into a near-steady state otherwise, and an
+    // idle board would simply stop moving.
+    const clock = u.uTime.value as number
+    sim.material.uniforms.uFeed.value = 0.037 + Math.sin(clock * 0.085) * 0.0016
+    sim.material.uniforms.uKill.value =
+      0.0605 + (u.uUrgency.value as number) * 0.0022 + Math.cos(clock * 0.062) * 0.0009
 
     const steps = reseeding ? PRIME_STEPS : STEPS_PER_FRAME
     for (let i = 0; i < steps; i++) {
@@ -190,14 +206,15 @@ export function Growth({ frame }: VisualProps) {
     }
 
     gl.setRenderTarget(prev)
-    display.uState.value = sim.targets[sim.index].texture
-    display.uScale.value = sim.material.uniforms.uScale.value as number
+    u.uState.value = sim.targets[sim.index].texture
+    u.uScale.value = sim.material.uniforms.uScale.value
   })
 
   return (
     <mesh frustumCulled={false}>
       <planeGeometry args={[2, 2]} />
       <shaderMaterial
+        ref={material}
         key={growthDisplayShader}
         vertexShader={fullscreenVertexShader}
         fragmentShader={growthDisplayShader}

@@ -91,7 +91,22 @@ tick:
 To add a fourth, drop a component in `src/visuals/` and register it in
 `visuals/index.ts`.
 
-### Two things that will bite you
+### Three things that will bite you
+
+**three.js deep-clones the uniforms object you hand a material.** The object you
+passed as a prop and the object the shader reads are different from the first
+frame onward, so mutating your own copy animates nothing. Worse, it fails
+*selectively*, which makes it look like something else entirely:
+
+| In `cloneUniforms` | Result |
+| --- | --- |
+| Scalars copied by value | Slot goes stale immediately — froze the wind field at `t=0` |
+| Arrays copied with `slice()` | New array, **same elements** — writing through `Vector4[]` kept working, so Foam looked fine |
+| Render-target textures replaced with `null` | The reaction-diffusion display sampled nothing at all — blank white panel |
+
+Always write through `material.uniforms` via a ref. `update()` in
+`visuals/common.ts` takes the material for exactly this reason.
+
 
 **`half` is a reserved word in GLSL ES.** So are `sample`, `filter`, `input`,
 `output` and `flat`. Using one gives you a silent black panel, not an error you
@@ -104,10 +119,19 @@ the driver answers by dropping the draw. The reseed in `Growth.tsx` clears
 ### Verifying without a render loop
 
 `requestAnimationFrame` stops when the tab is hidden, which takes every visual
-with it. `dev-verify.html` (served at `/dev-verify.html` in dev, not part of the
-production build) renders each visual at fixed progress values in one synchronous
-burst — thousands of reaction-diffusion steps included — so a screenshot tells
-you whether a shader change worked without needing a live frame loop.
+with it. Two dev-only pages at the repo root cover this; neither is part of the
+production build.
+
+`dev-verify.html` renders the shaders at fixed progress values in one
+synchronous burst — thousands of reaction-diffusion steps included — using its
+own renderer. Good for judging how something *looks*.
+
+`dev-harness.html` mounts the real components in a real `<Canvas frameloop="never">`
+and drives them with `advance()`, then **hashes the canvas pixels** each tick. It
+also carries a probe: the same hook and material wiring behind a shader whose
+only input is `uTime`. Comparing hashes across ticks is what caught the uniform
+cloning above — screenshots of a hidden pane are routinely stale composites, so
+comparing images by eye proves nothing.
 
 ## Running it
 

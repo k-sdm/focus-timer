@@ -1,0 +1,93 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>harness</title>
+<style>body{margin:0;background:#222;color:#fff;font:11px monospace}
+#grid{display:grid;grid-template-columns:repeat(4,1fr);gap:4px;padding:4px}
+.host{width:100%;aspect-ratio:1000/1200;background:#fff}
+#log{padding:6px;white-space:pre-wrap;color:#ff8}</style>
+</head><body>
+<div id="grid">
+  <div><div class="host" id="h0"></div><div>0 probe</div></div>
+  <div><div class="host" id="h1"></div><div>1 foam</div></div>
+  <div><div class="host" id="h2"></div><div>2 wind</div></div>
+  <div><div class="host" id="h3"></div><div>3 growth</div></div>
+</div>
+<div id="log">booting…</div>
+<script type="module">
+import React from 'react'
+import { createRoot } from 'react-dom/client'
+import { Canvas, advance, useFrame, useThree } from '@react-three/fiber'
+import { fullscreenVertexShader, useTimerUniforms } from '/src/visuals/common.ts'
+import { Wind } from '/src/visuals/Wind.tsx'
+import { Growth } from '/src/visuals/Growth.tsx'
+import { Foam } from '/src/visuals/Foam.tsx'
+
+const log = (m) => { document.getElementById('log').textContent += '\n' + m }
+window.addEventListener('error', e => log('ERROR: ' + e.message))
+
+const frame = { current: {
+  remaining: 1800, duration: 1800, progress: 1, urgency: 0,
+  running: true, sinceFinish: 1e6,
+} }
+
+// Minimal control: same hook, same material wiring, shader depends only on uTime.
+const PROBE = `precision highp float;
+varying vec2 vUv;
+uniform float uTime;
+void main() {
+  float v = step(0.5, fract(uTime * 0.7 + vUv.x * 2.0));
+  gl_FragColor = vec4(vec3(v), 1.0);
+}`
+
+function Probe() {
+  const size = useThree((s) => s.size)
+  const { uniforms, update } = useTimerUniforms()
+  const matRef = React.useRef()
+  useFrame((_, d) => {
+    update(matRef.current, frame.current, Math.min(d, 0.05), size.width, size.height)
+    const m = matRef.current
+    if (m) {
+      document.documentElement.dataset.probe = JSON.stringify({
+        sameObject: m.uniforms === uniforms,
+        sameSlot: m.uniforms.uTime === uniforms.uTime,
+        matTime: m.uniforms.uTime && +m.uniforms.uTime.value.toFixed(2),
+        myTime: +uniforms.uTime.value.toFixed(2),
+        keys: Object.keys(m.uniforms).join(','),
+      })
+    }
+  })
+  return React.createElement('mesh', { frustumCulled: false },
+    React.createElement('planeGeometry', { args: [2, 2] }),
+    React.createElement('shaderMaterial', {
+      ref: matRef,
+      vertexShader: fullscreenVertexShader, fragmentShader: PROBE,
+      uniforms, depthTest: false, depthWrite: false,
+    }))
+}
+
+const canvas = (Visual) => React.createElement(
+  Canvas,
+  { frameloop: 'never', dpr: 1, gl: { antialias: false, alpha: false, preserveDrawingBuffer: true }, flat: true },
+  React.createElement(Visual, { frame }),
+)
+
+;[Probe, Foam, Wind, Growth].forEach((V, i) =>
+  createRoot(document.getElementById('h' + i)).render(canvas(V)))
+
+let t = 1000, frames = 0
+setTimeout(() => {
+  log('mounted, advancing…')
+  const tick = () => {
+    for (let i = 0; i < 30; i++) { t += 16.67; try { advance(t) } catch (e) { log('THREW: ' + e.message) } frames++ }
+    document.documentElement.dataset.frames = String(frames)
+    document.querySelectorAll('canvas').forEach((c, i) => {
+      const url = c.toDataURL()
+      let h = 0
+      for (let k = 0; k < url.length; k += 37) h = (h * 31 + url.charCodeAt(k)) | 0
+      document.documentElement.dataset['h' + i] = h + ':' + url.length
+    })
+    document.title = 'f' + frames
+  }
+  tick(); setInterval(tick, 200)
+}, 700)
+</script>
+</body></html>
