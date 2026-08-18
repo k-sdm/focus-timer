@@ -1,21 +1,44 @@
-import { useEffect, useState } from 'react'
-import { STAGE } from './lib/design'
+import { useCallback, useEffect, useState } from 'react'
+import { SLIDER, STAGE } from './lib/design'
 import { useTimer } from './hooks/useTimer'
 import { useStageScale } from './hooks/useStageScale'
 import { TimerPanel } from './components/TimerPanel'
 import { ShaderPanel } from './components/ShaderPanel'
-import { VisualSwitcher } from './components/VisualSwitcher'
+import { DebugMenu, RANDOM_MODE } from './components/DebugMenu'
 import { VISUALS } from './visuals'
-import { SLIDER } from './lib/design'
+
+function pickOther(current: string): string {
+  const others = VISUALS.filter((v) => v.id !== current)
+  if (others.length === 0) return current
+  return others[Math.floor(Math.random() * others.length)].id
+}
 
 export default function App() {
   const timer = useTimer(8 * 60)
   const scale = useStageScale()
-  const [visualId, setVisualId] = useState(VISUALS[0].id)
   const [windowSize, setWindowSize] = useState<number>(SLIDER.initialValue)
+  const [debugOpen, setDebugOpen] = useState(false)
+
+  // `mode` is what the board has been told to do; `visualId` is what is on
+  // screen. They only differ while random is running the show.
+  const [mode, setMode] = useState<string>(RANDOM_MODE)
+  const [visualId, setVisualId] = useState(() => pickOther(''))
+
   const { toggle } = timer
 
-  // Space starts and stops; 1-3 pick a visual.
+  /** Setting a new duration deals a different visual — never the same twice. */
+  const onDurationCommit = useCallback(() => {
+    if (mode !== RANDOM_MODE) return
+    setVisualId(pickOther)
+  }, [mode])
+
+  const chooseMode = useCallback((next: string) => {
+    setMode(next)
+    if (next === RANDOM_MODE) setVisualId(pickOther)
+    else setVisualId(next)
+  }, [])
+
+  // Space starts and stops; R and 1-6 drive the same choices as the menu.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null
@@ -26,15 +49,19 @@ export default function App() {
         toggle()
         return
       }
+      if (e.key === 'r' || e.key === 'R') {
+        chooseMode(RANDOM_MODE)
+        return
+      }
 
       const index = Number(e.key) - 1
       if (Number.isInteger(index) && index >= 0 && index < VISUALS.length) {
-        setVisualId(VISUALS[index].id)
+        chooseMode(VISUALS[index].id)
       }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [toggle])
+  }, [toggle, chooseMode])
 
   return (
     <div className="stage-viewport">
@@ -49,8 +76,19 @@ export default function App() {
         }
       >
         <ShaderPanel frame={timer.frame} visualId={visualId} windowSize={windowSize} />
-        <VisualSwitcher value={visualId} onChange={setVisualId} />
-        <TimerPanel timer={timer} windowSize={windowSize} onWindowSize={setWindowSize} />
+        <TimerPanel
+          timer={timer}
+          windowSize={windowSize}
+          onWindowSize={setWindowSize}
+          onDurationCommit={onDurationCommit}
+        />
+        <DebugMenu
+          open={debugOpen}
+          onToggle={() => setDebugOpen((v) => !v)}
+          mode={mode}
+          onMode={chooseMode}
+          activeId={visualId}
+        />
       </div>
     </div>
   )

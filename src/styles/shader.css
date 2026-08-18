@@ -61,47 +61,71 @@
   white-space: nowrap;
 }
 
-.switcher {
+.debug__corner {
   position: absolute;
-  display: flex;
-  gap: 28px;
-  align-items: baseline;
+  width: 130px;
+  height: 116px;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: default;
+  z-index: 3;
 }
 
-.switcher__item {
+.debug__corner:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: -6px;
+}
+
+.debug {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  padding: 14px 0;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.18);
+  z-index: 3;
+}
+
+.debug__item {
   display: flex;
   align-items: baseline;
-  gap: 9px;
-  padding: 0;
+  gap: 14px;
+  padding: 9px 22px;
   border: 0;
   background: none;
   font-size: 22px;
   font-weight: 300;
   line-height: 1;
-  letter-spacing: 0.01em;
-  color: #a8a8a8;
-  cursor: pointer;
-  transition: color 160ms ease;
-}
-
-.switcher__item:hover {
+  text-align: left;
   color: #6a6a6a;
+  cursor: pointer;
+  transition: color 140ms ease;
 }
 
-.switcher__item.is-active {
+.debug__item:hover {
   color: var(--ink);
 }
 
-.switcher__index {
+.debug__item.is-selected {
+  color: var(--ink);
+  font-weight: 400;
+}
+
+.debug__key {
+  width: 18px;
   font-size: 15px;
-  color: #c4c4c4;
+  color: #bdbdbd;
 }
 
-.switcher__item.is-active .switcher__index {
-  color: #8a8a8a;
+.debug__now {
+  margin-left: auto;
+  font-size: 15px;
+  color: #bdbdbd;
 }
 
-.switcher__item:focus-visible {
+.debug__item:focus-visible {
   outline: 2px solid var(--ink);
-  outline-offset: 6px;
+  outline-offset: -2px;
 }

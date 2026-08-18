@@ -13,9 +13,9 @@ const VERTS = RINGS * SECTORS
 /** Cavalier projection: x across, depth receding, height up. */
 const SCALE_X = 0.82
 const SCALE_DEPTH = 0.30
-const SCALE_HEIGHT = 0.80
-const BASE_Y = -0.34
-const MAX_AMPLITUDE = 1.0
+const SCALE_HEIGHT = 0.88
+const BASE_Y = -0.44
+const MAX_AMPLITUDE = 1.40
 
 /** Positions arrive already in clip space, so the camera plays no part. */
 const passThroughVertexShader = /* glsl */ `
@@ -120,7 +120,7 @@ export function Relief({ frame }: VisualProps) {
         const x = Math.cos(a) * rr
         const depth = Math.sin(a) * rr
 
-        const h = ridged3(x * 1.9, depth * 1.9, s.time * 0.16, detail) * env * amp
+        const h = ridged3(x * 2.5, depth * 2.5, s.time * 0.16, detail) * env * amp
 
         array[i++] = x * SCALE_X
         array[i++] = depth * SCALE_DEPTH + h * SCALE_HEIGHT + BASE_Y

@@ -22,9 +22,11 @@ interface Props {
   timer: Timer
   windowSize: number
   onWindowSize: (value: number) => void
+  /** Fired when the ring finishes an adjustment that changed the duration. */
+  onDurationCommit: () => void
 }
 
-export function TimerPanel({ timer, windowSize, onWindowSize }: Props) {
+export function TimerPanel({ timer, windowSize, onWindowSize, onDurationCommit }: Props) {
   const editable = timer.status !== 'running'
 
   return (
@@ -47,6 +49,7 @@ export function TimerPanel({ timer, windowSize, onWindowSize }: Props) {
         remaining={timer.remaining}
         editable={editable}
         onScrub={timer.setDuration}
+        onScrubEnd={onDurationCommit}
       />
 
       <div

@@ -57,7 +57,7 @@ export function ridged3(x: number, y: number, z: number, detail: number): number
   let weight = 1
   let norm = 0
 
-  for (let i = 0; i < 4; i++) {
+  for (let i = 0; i < 5; i++) {
     let n = 1 - Math.abs(noise3(x * freq, y * freq, z * freq))
     n *= n
     n *= weight
