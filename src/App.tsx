@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { SLIDER, STAGE } from './lib/design'
 import { useTimer } from './hooks/useTimer'
 import { useStageScale } from './hooks/useStageScale'
@@ -27,14 +27,28 @@ export default function App() {
   const { toggle } = timer
 
   /**
-   * Clearing the board deals a different visual — never the one already up.
-   * Deliberately not tied to duration changes: adding time to a paused session
-   * should leave the visual you are working against alone.
+   * Adjusting the ring marks the session dirty, but the new visual is only
+   * dealt when the timer actually starts — dealing during the adjustment
+   * would shuffle the board under the user's hand on every step of a drag.
    */
-  const onReset = useCallback(() => {
-    if (mode !== RANDOM_MODE) return
-    setVisualId(pickOther)
-  }, [mode])
+  const adjusted = useRef(false)
+  const prevStatus = useRef(timer.status)
+
+  const onScrub = useCallback(
+    (seconds: number) => {
+      adjusted.current = true
+      timer.setDuration(seconds)
+    },
+    [timer],
+  )
+
+  useEffect(() => {
+    if (timer.status === 'running' && prevStatus.current !== 'running') {
+      if (adjusted.current && mode === RANDOM_MODE) setVisualId(pickOther)
+      adjusted.current = false
+    }
+    prevStatus.current = timer.status
+  }, [timer.status, mode])
 
   const chooseMode = useCallback((next: string) => {
     setMode(next)
@@ -58,10 +72,11 @@ export default function App() {
         return
       }
 
-      const index = Number(e.key) - 1
-      if (Number.isInteger(index) && index >= 0 && index < VISUALS.length) {
-        chooseMode(VISUALS[index].id)
-      }
+      // 1-9 then 0, which is the tenth.
+      const digit = Number(e.key)
+      if (!Number.isInteger(digit) || e.key === '') return
+      const index = digit === 0 ? 9 : digit - 1
+      if (index >= 0 && index < VISUALS.length) chooseMode(VISUALS[index].id)
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
@@ -84,7 +99,7 @@ export default function App() {
           timer={timer}
           windowSize={windowSize}
           onWindowSize={setWindowSize}
-          onReset={onReset}
+          onScrub={onScrub}
         />
         <DebugMenu
           open={debugOpen}

@@ -58,17 +58,7 @@ export const MENU_BAR = {
   scrimHeight: 118,
 } as const
 
-export const BUTTON = {
-  x: 243,
-  y: 958,
-  width: 506,
-  height: 70,
-  radius: 35,
-  gap: 22,
-} as const
-
-/** Second button sits directly under the first. */
-export const RESET_BUTTON_Y = BUTTON.y + BUTTON.height + BUTTON.gap
+export const BUTTON = { x: 243, y: 1028, width: 506, height: 70, radius: 35 } as const
 
 export const COLORS = {
   ink: '#000000',

@@ -53,7 +53,7 @@ export function DebugMenu({ open, onToggle, mode, onMode, activeId }: Props) {
                 className={`debug__item${selected ? ' is-selected' : ''}`}
                 onClick={() => onMode(option.id)}
               >
-                <span className="debug__key">{i === 0 ? 'R' : i}</span>
+                <span className="debug__key">{i === 0 ? 'R' : i % 10}</span>
                 {option.name}
                 {option.id === RANDOM_MODE && selected && (
                   <span className="debug__now">{activeId}</span>

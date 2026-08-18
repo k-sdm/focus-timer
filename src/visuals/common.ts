@@ -12,6 +12,11 @@ export const fullscreenVertexShader = /* glsl */ `
   }
 `
 
+/** For geometry whose positions are already in clip space — no camera. */
+export const clipVertexShader = /* glsl */ `
+  void main() { gl_Position = vec4(position.xyz, 1.0); }
+`
+
 export interface VisualProps {
   frame: React.RefObject<TimerFrame>
 }
