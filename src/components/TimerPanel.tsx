@@ -78,7 +78,7 @@ export function TimerPanel({ timer, windowSize, onWindowSize }: Props) {
 
       <button
         type="button"
-        className="panel__action"
+        className={`panel__action${timer.status === 'running' ? ' is-running' : ''}`}
         onClick={timer.toggle}
         style={{
           left: BUTTON.x,

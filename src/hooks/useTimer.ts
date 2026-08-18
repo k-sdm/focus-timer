@@ -2,8 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 
 export const MAX_DURATION_SEC = 30 * 60
 export const MIN_DURATION_SEC = 30
-/** Dragging the ring snaps to half-minute steps so the readout stays legible. */
-export const DURATION_STEP_SEC = 30
+/** Dragging the ring snaps to ten-second steps. */
+export const DURATION_STEP_SEC = 10
 
 export type TimerStatus = 'idle' | 'running' | 'paused' | 'done'
 
@@ -21,6 +21,11 @@ export interface TimerFrame {
   /** `1 - progress`, i.e. how close the buzzer is. */
   urgency: number
   running: boolean
+  /**
+   * Deliberately stopped, as opposed to merely not started. Visuals freeze on
+   * this; an armed board that has not been started yet still animates.
+   */
+  paused: boolean
   /** Seconds since the timer last hit zero; large when it never has. */
   sinceFinish: number
 }
@@ -68,6 +73,7 @@ export function useTimer(initialSeconds = 8 * 60): Timer {
     progress: 1,
     urgency: 0,
     running: false,
+    paused: false,
     sinceFinish: NEVER_FINISHED,
   })
 
@@ -76,17 +82,21 @@ export function useTimer(initialSeconds = 8 * 60): Timer {
   const finishedAt = useRef(Number.NEGATIVE_INFINITY)
   const rafId = useRef(0)
 
-  const publish = useCallback((left: number, total: number, running: boolean) => {
-    const f = frame.current
-    f.remaining = left
-    f.duration = total
-    f.progress = total > 0 ? left / total : 0
-    f.urgency = 1 - f.progress
-    f.running = running
-    f.sinceFinish = Number.isFinite(finishedAt.current)
-      ? (performance.now() - finishedAt.current) / 1000
-      : NEVER_FINISHED
-  }, [])
+  const publish = useCallback(
+    (left: number, total: number, running: boolean, paused = false) => {
+      const f = frame.current
+      f.remaining = left
+      f.duration = total
+      f.progress = total > 0 ? left / total : 0
+      f.urgency = 1 - f.progress
+      f.running = running
+      f.paused = paused
+      f.sinceFinish = Number.isFinite(finishedAt.current)
+        ? (performance.now() - finishedAt.current) / 1000
+        : NEVER_FINISHED
+    },
+    [],
+  )
 
   // Idle bookkeeping: whenever the armed duration changes outside a run, the
   // remaining time tracks it so the ring and the readout stay in sync.
@@ -134,7 +144,7 @@ export function useTimer(initialSeconds = 8 * 60): Timer {
   // so a stalled tab or a dropped frame can't make the clock drift.
   useEffect(() => {
     if (status !== 'running') {
-      publish(remaining, duration, false)
+      publish(remaining, duration, false, status === 'paused')
       return
     }
 
@@ -160,7 +170,7 @@ export function useTimer(initialSeconds = 8 * 60): Timer {
 
   // Pausing has to bank the time that was left when the pause happened.
   useEffect(() => {
-    if (status === 'paused') publish(remaining, duration, false)
+    if (status === 'paused') publish(remaining, duration, false, true)
   }, [status, remaining, duration, publish])
 
   return {

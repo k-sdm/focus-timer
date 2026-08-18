@@ -169,8 +169,9 @@ export function Growth({ frame }: VisualProps) {
   const lastProgress = useRef(1)
 
   useFrame((_, delta) => {
-    const dt = Math.min(delta, 0.05)
     const t = frame.current
+    // A deliberate pause stops the animation; merely being armed does not.
+    const dt = t.paused ? 0 : Math.min(delta, 0.05)
     // Written through the material: three clones the uniforms object it is
     // given, and in particular replaces render-target textures with null, so a
     // uState assigned to the template would never reach the shader.

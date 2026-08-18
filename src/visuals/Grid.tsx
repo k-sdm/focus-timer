@@ -17,13 +17,10 @@ export function Grid({ frame }: VisualProps) {
   const uniforms = useRef(createTimerUniforms()).current
 
   useFrame((_, delta) => {
-    update(
-      material.current,
-      frame.current,
-      Math.min(delta, 0.05),
-      size.width * dpr,
-      size.height * dpr,
-    )
+    const t = frame.current
+    // A deliberate pause stops the animation; merely being armed does not.
+    const dt = t.paused ? 0 : Math.min(delta, 0.05)
+    update(material.current, t, dt, size.width * dpr, size.height * dpr)
   })
 
   return (

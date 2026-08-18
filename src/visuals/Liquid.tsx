@@ -112,8 +112,9 @@ export function Liquid({ frame }: VisualProps) {
   const lastProgress = useRef(1)
 
   useFrame((_, delta) => {
-    const dt = Math.min(delta, 0.05)
     const t = frame.current
+    // A deliberate pause stops the animation; merely being armed does not.
+    const dt = t.paused ? 0 : Math.min(delta, 0.05)
     const u = update(material.current, t, dt, size.width * dpr, size.height * dpr)
     if (!u) return
 
@@ -147,7 +148,9 @@ export function Liquid({ frame }: VisualProps) {
     sim.material.uniforms.uSpawn.value = spawn
     sim.material.uniforms.uTime.value = u.uTime.value as number
 
-    for (let i = 0; i < STEPS_PER_FRAME; i++) {
+    // Step count, not dt, drives the automaton, so freezing needs saying twice.
+    const steps = t.paused ? 0 : STEPS_PER_FRAME
+    for (let i = 0; i < steps; i++) {
       sim.material.uniforms.uState.value = sim.targets[sim.index].texture
       sim.material.uniforms.uOffset.value = i % 2
       gl.setRenderTarget(sim.targets[1 - sim.index])

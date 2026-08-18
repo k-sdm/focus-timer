@@ -52,8 +52,9 @@ export function Foam({ frame }: VisualProps) {
   }, [sim])
 
   useFrame((_, delta) => {
-    const dt = Math.min(delta, 0.05)
     const t = frame.current
+    // A deliberate pause stops the animation; merely being armed does not.
+    const dt = t.paused ? 0 : Math.min(delta, 0.05)
     // Everything is written through the material: the uniforms object above is
     // only a template, and three clones it when the material is built.
     const u = update(material.current, t, dt, size.width * dpr, size.height * dpr)

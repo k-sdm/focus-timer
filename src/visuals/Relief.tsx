@@ -86,8 +86,9 @@ export function Relief({ frame }: VisualProps) {
   const state = useRef({ time: 0, amplitude: 0 })
 
   useFrame((_, delta) => {
-    const dt = Math.min(delta, 0.05)
     const t = frame.current
+    // A deliberate pause stops the animation; merely being armed does not.
+    const dt = t.paused ? 0 : Math.min(delta, 0.05)
     const s = state.current
     s.time += dt
 

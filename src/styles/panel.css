@@ -88,6 +88,14 @@
   opacity: 0.92;
 }
 
+/* Counting down reads as an inverted button: outlined rather than filled, so a
+   running board is legible at a glance from across a room. */
+.panel__action.is-running {
+  background: var(--muted);
+  border: 3px solid var(--white);
+  color: var(--white);
+}
+
 .panel__action:active {
   transform: scale(0.985);
 }
