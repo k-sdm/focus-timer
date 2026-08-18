@@ -43,12 +43,11 @@ export function Foam({ frame }: VisualProps) {
     [],
   )
 
-  /** Progress at the last pop, so bursts track the clock rather than the frame. */
-  const lastProgress = useRef(1)
+  const generation = useRef(-1)
 
   useEffect(() => {
     sim.reset()
-    lastProgress.current = 1
+    generation.current = -1
   }, [sim])
 
   useFrame((_, delta) => {
@@ -60,16 +59,18 @@ export function Foam({ frame }: VisualProps) {
     const u = update(material.current, t, dt, size.width * dpr, size.height * dpr)
     if (!u) return
 
-    // A reset (or a scrub upward) refills the cluster.
-    if (t.progress > lastProgress.current + 0.02 && sim.aliveCount < MAX_BUBBLES) {
+    // A fresh session rebuilds the cluster outright.
+    if (t.generation !== generation.current) {
+      generation.current = t.generation
       sim.reset()
     }
-    lastProgress.current = t.progress
 
     // Bubbles retire in step with the clock: full cluster at the start, one
-    // left at the buzzer.
+    // left at the buzzer. Time added mid-session brings them back rather than
+    // simply halting the decline.
     const wanted = Math.max(1, Math.round(t.progress * MAX_BUBBLES))
     if (sim.aliveCount > wanted) sim.pop()
+    else if (sim.aliveCount < wanted) sim.revive()
 
     // ...and the survivors close down as well, so the foam shrinks overall.
     sim.step(dt, 0.72 + 0.28 * t.progress)

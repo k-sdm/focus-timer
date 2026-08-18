@@ -56,6 +56,7 @@ function createSim(): Sim {
       uGrid: { value: new THREE.Vector2(SAND_COLS, SAND_ROWS) },
       uOffset: { value: 0 },
       uSpawn: { value: 0 },
+      uDrain: { value: 0 },
       uTime: { value: 0 },
       uStep: { value: 0 },
       uReset: { value: 1 },
@@ -112,7 +113,7 @@ export function Liquid({ frame }: VisualProps) {
     [],
   )
 
-  const lastProgress = useRef(1)
+  const generation = useRef(-1)
 
   useFrame((_, delta) => {
     const t = frame.current
@@ -125,7 +126,8 @@ export function Liquid({ frame }: VisualProps) {
     const sim = simRef.current
     const prev = gl.getRenderTarget()
 
-    if (!sim.seeded || t.progress > lastProgress.current + 0.02) {
+    if (!sim.seeded || t.generation !== generation.current) {
+      generation.current = t.generation
       sim.material.uniforms.uReset.value = 1
       sim.material.uniforms.uState.value = null
       for (const target of sim.targets) {
@@ -137,18 +139,24 @@ export function Liquid({ frame }: VisualProps) {
       sim.index = 0
       sim.grains = 0
     }
-    lastProgress.current = t.progress
 
     // Meter the inlet off the shortfall rather than a fixed rate, so the grid
     // is full at the buzzer whatever duration was armed. Grains are never
     // removed, so integrating what we ask for tracks what is actually down.
     const target = CELLS * PACKED * (1 - Math.max(0, Math.min(1, t.progress)))
-    const shortfall = Math.max(0, target - sim.grains)
+    const shortfall = target - sim.grains
     const capacity = INLET_CELLS * STEPS_PER_FRAME
-    const spawn = Math.min(1, shortfall / capacity)
+    const spawn = Math.min(1, Math.max(0, shortfall) / capacity)
     sim.grains = Math.min(CELLS * PACKED, sim.grains + spawn * capacity * 0.85)
 
+    // Time added mid-session means the level has to come back down, and rain
+    // cannot un-fall — so the surface gives drops up instead.
+    const surplus = Math.max(0, -shortfall)
+    const drain = surplus > CELLS * 0.004 ? Math.min(0.06, surplus / (CELLS * 0.9)) : 0
+    sim.grains = Math.max(0, sim.grains - drain * SAND_COLS * STEPS_PER_FRAME * 0.5)
+
     sim.material.uniforms.uSpawn.value = spawn
+    sim.material.uniforms.uDrain.value = drain
     sim.material.uniforms.uTime.value = u.uTime.value as number
 
     // Step count, not dt, drives the automaton, so freezing needs saying twice.

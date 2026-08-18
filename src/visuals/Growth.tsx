@@ -166,7 +166,7 @@ export function Growth({ frame }: VisualProps) {
   )
   const material = useRef<THREE.ShaderMaterial>(null)
 
-  const lastProgress = useRef(1)
+  const generation = useRef(-1)
 
   useFrame((_, delta) => {
     const t = frame.current
@@ -186,7 +186,7 @@ export function Growth({ frame }: VisualProps) {
     sim.material.uniforms.uRadius.value = (u.uProgress.value as number) * 0.84
 
     // Reseed on the first frame after allocation, and on a reset.
-    const reseeding = !sim.seeded || t.progress > lastProgress.current + 0.02
+    const reseeding = !sim.seeded || t.generation !== generation.current
     if (reseeding) {
       sim.material.uniforms.uSeed.value = 1
       // Detach the previous state first: seeding writes to both targets, and
@@ -201,8 +201,8 @@ export function Growth({ frame }: VisualProps) {
       sim.seeded = true
       sim.index = 0
       sim.prime = PRIME_TOTAL
+      generation.current = t.generation
     }
-    lastProgress.current = t.progress
 
     // A touch more kill as time runs out: the frontier breaks into dots sooner.
     // The slow drift on top keeps the labyrinth reorganising once it has filled

@@ -23,12 +23,10 @@ interface Props {
   windowSize: number
   onWindowSize: (value: number) => void
   /** Ring adjustments route through here so the app can see them happen. */
-  onScrub: (seconds: number) => void
+  onScrub: (offsetSeconds: number) => void
 }
 
 export function TimerPanel({ timer, windowSize, onWindowSize, onScrub }: Props) {
-  const editable = timer.status !== 'running'
-
   return (
     <section className="panel" aria-label="Focus timer">
       <PanelChrome />
@@ -45,7 +43,11 @@ export function TimerPanel({ timer, windowSize, onWindowSize, onScrub }: Props) 
         {TITLE[timer.status]}
       </h1>
 
-      <DonutTimer remaining={timer.remaining} editable={editable} onScrub={onScrub} />
+      <DonutTimer
+        remaining={timer.remaining}
+        onScrubStart={timer.beginScrub}
+        onScrub={onScrub}
+      />
 
       <div
         className="panel__readout"

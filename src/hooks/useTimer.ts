@@ -28,6 +28,13 @@ export interface TimerFrame {
   paused: boolean
   /** Seconds since the timer last hit zero; large when it never has. */
   sinceFinish: number
+  /**
+   * Increments when a fresh run begins. Visuals holding accumulated state
+   * watch this rather than sniffing for a jump in progress — scrubbing time on
+   * mid-session moves progress just as far as a restart does, and there is no
+   * threshold that tells the two apart.
+   */
+  generation: number
 }
 
 export interface Timer {
@@ -39,6 +46,10 @@ export interface Timer {
   progress: number
   frame: React.RefObject<TimerFrame>
   setDuration: (seconds: number) => void
+  /** Call on pointer-down; captures what the drag is measured against. */
+  beginScrub: () => void
+  /** Offset in seconds from the position captured by `beginScrub`. */
+  scrubTo: (offsetSeconds: number) => void
   start: () => void
   pause: () => void
   reset: () => void
@@ -75,10 +86,24 @@ export function useTimer(initialSeconds = 8 * 60): Timer {
     running: false,
     paused: false,
     sinceFinish: NEVER_FINISHED,
+    generation: 0,
   })
 
   /** performance.now() at which the current run reaches zero. */
   const deadline = useRef(0)
+  const generation = useRef(0)
+  const statusRef = useRef(status)
+  const durationRef = useRef(duration)
+  const remainingRef = useRef(remaining)
+  statusRef.current = status
+  durationRef.current = duration
+  remainingRef.current = remaining
+  const scrubBase = useRef<{
+    duration: number
+    remaining: number
+    deadline: number
+    running: boolean
+  } | null>(null)
   const finishedAt = useRef(Number.NEGATIVE_INFINITY)
   const rafId = useRef(0)
 
@@ -91,6 +116,7 @@ export function useTimer(initialSeconds = 8 * 60): Timer {
       f.urgency = 1 - f.progress
       f.running = running
       f.paused = paused
+      f.generation = generation.current
       f.sinceFinish = Number.isFinite(finishedAt.current)
         ? (performance.now() - finishedAt.current) / 1000
         : NEVER_FINISHED
@@ -119,15 +145,61 @@ export function useTimer(initialSeconds = 8 * 60): Timer {
       if (left <= 0) return s
       deadline.current = performance.now() + left * 1000
       finishedAt.current = Number.NEGATIVE_INFINITY
+      // Resuming continues the same session; anything else starts a new one.
+      if (s !== 'paused') generation.current += 1
       return 'running'
     })
   }, [duration, remaining])
+
+  const beginScrub = useCallback(() => {
+    const live =
+      statusRef.current === 'running'
+        ? Math.max(0, (deadline.current - performance.now()) / 1000)
+        : remainingRef.current
+    scrubBase.current = {
+      duration: durationRef.current,
+      remaining: live,
+      deadline: deadline.current,
+      running: statusRef.current === 'running',
+    }
+  }, [])
+
+  /**
+   * While the clock runs the drag moves the deadline rather than setting an
+   * absolute time: the countdown carries on underneath, so measuring against a
+   * value captured at pointer-down would hand back every second that elapsed
+   * during the drag.
+   *
+   * The armed duration shifts by the same amount, which keeps progress
+   * continuous — adding two minutes to a four-of-eight session leaves six of
+   * ten, not a jump back to full.
+   */
+  const scrubTo = useCallback(
+    (offsetSeconds: number) => {
+      const base = scrubBase.current
+      if (!base) return
+
+      if (!base.running) {
+        setDuration(snapDuration(base.remaining + offsetSeconds))
+        return
+      }
+
+      const step = Math.round(offsetSeconds / DURATION_STEP_SEC) * DURATION_STEP_SEC
+      const next = clampDuration(base.remaining + step)
+      const applied = next - base.remaining
+      deadline.current = base.deadline + applied * 1000
+      setDurationState(clampDuration(base.duration + applied))
+      setRemaining(next)
+    },
+    [setDuration],
+  )
 
   const pause = useCallback(() => {
     setStatus((s) => (s === 'running' ? 'paused' : s))
   }, [])
 
   const reset = useCallback(() => {
+    generation.current += 1
     setStatus('idle')
     setRemaining(duration)
     finishedAt.current = Number.NEGATIVE_INFINITY
@@ -181,6 +253,8 @@ export function useTimer(initialSeconds = 8 * 60): Timer {
     progress: duration > 0 ? remaining / duration : 0,
     frame,
     setDuration,
+    beginScrub,
+    scrubTo,
     start,
     pause,
     reset,

@@ -104,6 +104,13 @@ export const sandSimShader = /* glsl */ `
 
     // Inlet: a narrow column at the top, so the grid fills from a single
     // dropping stream the way a sand timer does.
+    // Draining. Only drops with open sky above them go, so the level falls from
+    // the surface down and stays flat rather than opening holes in the body.
+    if (uDrain > 0.0 && isGrain(value) && isEmpty(cellAt(c + vec2(0.0, 1.0))) &&
+        hash21(c + uStep * 0.0197 + 41.0) < uDrain) {
+      value = 0.0;
+    }
+
     // Rain: the inlet is the whole width, so the metered drops arrive scattered
     // and individual rather than as one stream from a single column. Both top
     // rows share a column hash, which makes each arrival a two-cell drop rather

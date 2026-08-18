@@ -1,22 +1,22 @@
 import { useCallback, useRef } from 'react'
 import { DONUT, COLORS } from '../lib/design'
 import { TAU, angleFrom, arcPath, shortestDelta } from '../lib/arc'
-import { MAX_DURATION_SEC, snapDuration } from '../hooks/useTimer'
+import { MAX_DURATION_SEC } from '../hooks/useTimer'
 
 interface Props {
   /** Seconds currently shown by the ring. */
   remaining: number
-  /** Whether the ring accepts drag input right now. */
-  editable: boolean
-  onScrub: (seconds: number) => void
+  onScrubStart: () => void
+  /** Total offset in seconds since the drag began, not an absolute time. */
+  onScrub: (offsetSeconds: number) => void
 }
 
 const SIZE = DONUT.outerRadius * 2
 const C = DONUT.outerRadius // centre in local SVG coordinates
 
-export function DonutTimer({ remaining, editable, onScrub }: Props) {
+export function DonutTimer({ remaining, onScrubStart, onScrub }: Props) {
   const svgRef = useRef<SVGSVGElement>(null)
-  const drag = useRef({ active: false, lastAngle: 0, accum: 0, startSeconds: 0 })
+  const drag = useRef({ active: false, lastAngle: 0, accum: 0 })
 
   const angleAt = useCallback((clientX: number, clientY: number) => {
     const el = svgRef.current
@@ -33,16 +33,11 @@ export function DonutTimer({ remaining, editable, onScrub }: Props) {
 
   const onPointerDown = useCallback(
     (e: React.PointerEvent) => {
-      if (!editable) return
       e.currentTarget.setPointerCapture(e.pointerId)
-      drag.current = {
-        active: true,
-        lastAngle: angleAt(e.clientX, e.clientY),
-        accum: 0,
-        startSeconds: remaining,
-      }
+      drag.current = { active: true, lastAngle: angleAt(e.clientX, e.clientY), accum: 0 }
+      onScrubStart()
     },
-    [editable, remaining, angleAt],
+    [angleAt, onScrubStart],
   )
 
   const onPointerMove = useCallback(
@@ -54,7 +49,8 @@ export function DonutTimer({ remaining, editable, onScrub }: Props) {
       // value can't wrap from 30:00 back to 00:00 as the pointer crosses noon.
       d.accum += shortestDelta(angle - d.lastAngle)
       d.lastAngle = angle
-      onScrub(snapDuration(d.startSeconds + (d.accum / TAU) * MAX_DURATION_SEC))
+      // Reported as an offset, so the caller can apply it against a live clock.
+      onScrub((d.accum / TAU) * MAX_DURATION_SEC)
     },
     [angleAt, onScrub],
   )
@@ -82,7 +78,7 @@ export function DonutTimer({ remaining, editable, onScrub }: Props) {
       style={{
         left: DONUT.cx - DONUT.outerRadius,
         top: DONUT.cy - DONUT.outerRadius,
-        cursor: editable ? 'grab' : 'default',
+        cursor: 'grab',
       }}
       role="slider"
       aria-label="Focus duration"
@@ -129,7 +125,7 @@ export function DonutTimer({ remaining, editable, onScrub }: Props) {
         fill="none"
         stroke="transparent"
         strokeWidth={DONUT.thickness + 40}
-        style={{ pointerEvents: editable ? 'stroke' : 'none' }}
+        style={{ pointerEvents: 'stroke' }}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={endDrag}

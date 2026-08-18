@@ -104,6 +104,7 @@ export function Boids({ frame }: VisualProps) {
   }, [])
 
   const released = useRef(0)
+  const generation = useRef(-1)
 
   useFrame((_, delta) => {
     const t = frame.current
@@ -111,7 +112,31 @@ export function Boids({ frame }: VisualProps) {
     const u = update(material.current, t, dt, size.width * dpr, size.height * dpr)
     if (!u) return
 
+    if (t.generation !== generation.current) {
+      generation.current = t.generation
+      flock.forEach((b) => {
+        b.free = false
+        b.presence = 1
+      })
+      released.current = 0
+    }
+
     const wanted = Math.round((1 - Math.max(0, Math.min(1, t.progress))) * MAX_BIRDS)
+
+    // Time added mid-session calls birds back onto the ring rather than
+    // stranding them off frame.
+    while (released.current > wanted) {
+      released.current--
+      const bird = flock[released.current]
+      const a = Math.random() * Math.PI * 2
+      bird.free = false
+      bird.presence = 1
+      bird.x = Math.cos(a) * RING_RADIUS
+      bird.y = Math.sin(a) * RING_RADIUS + RING_CENTRE_Y
+      bird.vx = -Math.sin(a) * CRUISE
+      bird.vy = Math.cos(a) * CRUISE
+    }
+
     while (released.current < wanted) {
       const bird = flock[released.current]
       bird.free = true
@@ -122,14 +147,6 @@ export function Boids({ frame }: VisualProps) {
       bird.vy += (ny / len) * 0.2
       released.current++
     }
-    if (wanted === 0 && released.current > 0) {
-      flock.forEach((b) => {
-        b.free = false
-        b.presence = 1
-      })
-      released.current = 0
-    }
-
     for (let i = 0; i < MAX_BIRDS; i++) {
       const b = flock[i]
       b.flap += b.flapRate * dt

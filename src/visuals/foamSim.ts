@@ -69,7 +69,7 @@ export class FoamSim {
   pops: Pop[] = []
   /** Seconds of simulated time; drives the drift and breathing phases. */
   time = 0
-  private rand = mulberry(0x5eed)
+  rand = mulberry(0x5eed)
   /** Panel aspect; settable, so resizing the window never resets the cluster. */
   aspect = 1
 
@@ -167,6 +167,35 @@ export class FoamSim {
       b.amp = Math.min(0.22, b.amp + falloff * 0.16)
       b.angle = Math.atan2(dy, dx)
     }
+  }
+
+  /** Brings one retired bubble back, swelling out of the cluster it left. */
+  revive() {
+    const dead = this.bubbles.find((b) => !b.alive)
+    if (!dead) return
+
+    let cx = 0
+    let cy = 0
+    let n = 0
+    for (const b of this.bubbles) {
+      if (!b.alive) continue
+      cx += b.x
+      cy += b.y
+      n++
+    }
+    if (n > 0) {
+      cx /= n
+      cy /= n
+    }
+
+    dead.alive = true
+    dead.x = cx + (this.rand() - 0.5) * 0.12
+    dead.y = cy + (this.rand() - 0.5) * 0.12
+    dead.vx = 0
+    dead.vy = 0
+    dead.r = 0.002
+    dead.rv = 0
+    dead.amp = 0.2
   }
 
   step(dt: number, shrink: number) {

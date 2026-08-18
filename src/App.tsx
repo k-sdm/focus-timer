@@ -35,9 +35,11 @@ export default function App() {
   const prevStatus = useRef(timer.status)
 
   const onScrub = useCallback(
-    (seconds: number) => {
-      adjusted.current = true
-      timer.setDuration(seconds)
+    (offsetSeconds: number) => {
+      // Extending a run in progress is not a new session, so it must not queue
+      // up a change of visual for the next time the clock starts.
+      if (timer.status !== 'running') adjusted.current = true
+      timer.scrubTo(offsetSeconds)
     },
     [timer],
   )
