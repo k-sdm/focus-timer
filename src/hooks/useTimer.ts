@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 export const MAX_DURATION_SEC = 30 * 60
-export const MIN_DURATION_SEC = 30
+export const MIN_DURATION_SEC = 10
 /** Dragging the ring snaps to ten-second steps. */
 export const DURATION_STEP_SEC = 10
 
@@ -134,11 +134,12 @@ export function useTimer(initialSeconds = 8 * 60): Timer {
     publish(duration, duration, false)
   }, [duration, publish])
 
+  // Purely start/stop now; clearing down is the reset button's job. `start`
+  // already rewinds a finished run, so pressing it again just goes round again.
   const toggle = useCallback(() => {
     if (status === 'running') pause()
-    else if (status === 'done') reset()
     else start()
-  }, [status, pause, reset, start])
+  }, [status, pause, start])
 
   // The countdown itself. Driven off a deadline rather than accumulated deltas
   // so a stalled tab or a dropped frame can't make the clock drift.

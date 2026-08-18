@@ -9,16 +9,14 @@ interface Props {
   /** Whether the ring accepts drag input right now. */
   editable: boolean
   onScrub: (seconds: number) => void
-  /** Fired once when a drag that actually changed the duration finishes. */
-  onScrubEnd?: () => void
 }
 
 const SIZE = DONUT.outerRadius * 2
 const C = DONUT.outerRadius // centre in local SVG coordinates
 
-export function DonutTimer({ remaining, editable, onScrub, onScrubEnd }: Props) {
+export function DonutTimer({ remaining, editable, onScrub }: Props) {
   const svgRef = useRef<SVGSVGElement>(null)
-  const drag = useRef({ active: false, lastAngle: 0, accum: 0, startSeconds: 0, changed: false })
+  const drag = useRef({ active: false, lastAngle: 0, accum: 0, startSeconds: 0 })
 
   const angleAt = useCallback((clientX: number, clientY: number) => {
     const el = svgRef.current
@@ -42,7 +40,6 @@ export function DonutTimer({ remaining, editable, onScrub, onScrubEnd }: Props) 
         lastAngle: angleAt(e.clientX, e.clientY),
         accum: 0,
         startSeconds: remaining,
-        changed: false,
       }
     },
     [editable, remaining, angleAt],
@@ -57,24 +54,18 @@ export function DonutTimer({ remaining, editable, onScrub, onScrubEnd }: Props) 
       // value can't wrap from 30:00 back to 00:00 as the pointer crosses noon.
       d.accum += shortestDelta(angle - d.lastAngle)
       d.lastAngle = angle
-      const next = snapDuration(d.startSeconds + (d.accum / TAU) * MAX_DURATION_SEC)
-      if (next !== snapDuration(d.startSeconds)) d.changed = true
-      onScrub(next)
+      onScrub(snapDuration(d.startSeconds + (d.accum / TAU) * MAX_DURATION_SEC))
     },
     [angleAt, onScrub],
   )
 
-  const endDrag = useCallback(
-    (e: React.PointerEvent) => {
-      if (!drag.current.active) return
-      drag.current.active = false
-      if (e.currentTarget.hasPointerCapture(e.pointerId)) {
-        e.currentTarget.releasePointerCapture(e.pointerId)
-      }
-      if (drag.current.changed) onScrubEnd?.()
-    },
-    [onScrubEnd],
-  )
+  const endDrag = useCallback((e: React.PointerEvent) => {
+    if (!drag.current.active) return
+    drag.current.active = false
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId)
+    }
+  }, [])
 
   const fraction = Math.min(1, Math.max(0, remaining / MAX_DURATION_SEC))
   const sweep = fraction * TAU

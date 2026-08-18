@@ -26,8 +26,12 @@ export default function App() {
 
   const { toggle } = timer
 
-  /** Setting a new duration deals a different visual — never the same twice. */
-  const onDurationCommit = useCallback(() => {
+  /**
+   * Clearing the board deals a different visual — never the one already up.
+   * Deliberately not tied to duration changes: adding time to a paused session
+   * should leave the visual you are working against alone.
+   */
+  const onReset = useCallback(() => {
     if (mode !== RANDOM_MODE) return
     setVisualId(pickOther)
   }, [mode])
@@ -80,7 +84,7 @@ export default function App() {
           timer={timer}
           windowSize={windowSize}
           onWindowSize={setWindowSize}
-          onDurationCommit={onDurationCommit}
+          onReset={onReset}
         />
         <DebugMenu
           open={debugOpen}

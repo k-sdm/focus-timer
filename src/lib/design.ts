@@ -58,7 +58,17 @@ export const MENU_BAR = {
   scrimHeight: 118,
 } as const
 
-export const BUTTON = { x: 243, y: 1028, width: 506, height: 70, radius: 35 } as const
+export const BUTTON = {
+  x: 243,
+  y: 958,
+  width: 506,
+  height: 70,
+  radius: 35,
+  gap: 22,
+} as const
+
+/** Second button sits directly under the first. */
+export const RESET_BUTTON_Y = BUTTON.y + BUTTON.height + BUTTON.gap
 
 export const COLORS = {
   ink: '#000000',
@@ -84,5 +94,6 @@ export const TYPE = {
   title: { size: 50, weight: 300, baseline: 119 },
   readout: { size: 48, weight: 700, baseline: 449 },
   label: { size: 24, weight: 300, baseline: 731 },
-  button: { size: 36, weight: 700, baseline: 1074 },
+  /** The button baseline is measured inside its own box, not the board. */
+  button: { size: 36, weight: 700, baseline: 46.4 },
 } as const

@@ -1,4 +1,10 @@
-import { BUTTON, CONTENT_BOX_WIDTH, TYPE, baselineTop } from '../lib/design'
+import {
+  BUTTON,
+  CONTENT_BOX_WIDTH,
+  RESET_BUTTON_Y,
+  TYPE,
+  baselineTop,
+} from '../lib/design'
 import { formatClock, type Timer } from '../hooks/useTimer'
 import { DonutTimer } from './DonutTimer'
 import { WindowSlider } from './WindowSlider'
@@ -8,7 +14,7 @@ const ACTION_LABEL: Record<Timer['status'], string> = {
   idle: 'Start',
   running: 'Pause',
   paused: 'Resume',
-  done: 'Reset',
+  done: 'Start',
 }
 
 const TITLE: Record<Timer['status'], string> = {
@@ -22,12 +28,18 @@ interface Props {
   timer: Timer
   windowSize: number
   onWindowSize: (value: number) => void
-  /** Fired when the ring finishes an adjustment that changed the duration. */
-  onDurationCommit: () => void
+  /** Fired when the board is cleared down, which deals a new visual. */
+  onReset: () => void
 }
 
-export function TimerPanel({ timer, windowSize, onWindowSize, onDurationCommit }: Props) {
+export function TimerPanel({ timer, windowSize, onWindowSize, onReset }: Props) {
   const editable = timer.status !== 'running'
+  const labelTop = baselineTop(TYPE.button.baseline, TYPE.button.size)
+
+  const handleReset = () => {
+    timer.reset()
+    onReset()
+  }
 
   return (
     <section className="panel" aria-label="Focus timer">
@@ -45,12 +57,7 @@ export function TimerPanel({ timer, windowSize, onWindowSize, onDurationCommit }
         {TITLE[timer.status]}
       </h1>
 
-      <DonutTimer
-        remaining={timer.remaining}
-        editable={editable}
-        onScrub={timer.setDuration}
-        onScrubEnd={onDurationCommit}
-      />
+      <DonutTimer remaining={timer.remaining} editable={editable} onScrub={timer.setDuration} />
 
       <div
         className="panel__readout"
@@ -91,14 +98,25 @@ export function TimerPanel({ timer, windowSize, onWindowSize, onDurationCommit }
           borderRadius: BUTTON.radius,
         }}
       >
-        <span
-          style={{
-            top: baselineTop(TYPE.button.baseline, TYPE.button.size) - BUTTON.y,
-            fontSize: TYPE.button.size,
-            fontWeight: TYPE.button.weight,
-          }}
-        >
+        <span style={{ top: labelTop, fontSize: TYPE.button.size, fontWeight: TYPE.button.weight }}>
           {ACTION_LABEL[timer.status]}
+        </span>
+      </button>
+
+      <button
+        type="button"
+        className="panel__action"
+        onClick={handleReset}
+        style={{
+          left: BUTTON.x,
+          top: RESET_BUTTON_Y,
+          width: BUTTON.width,
+          height: BUTTON.height,
+          borderRadius: BUTTON.radius,
+        }}
+      >
+        <span style={{ top: labelTop, fontSize: TYPE.button.size, fontWeight: TYPE.button.weight }}>
+          Reset
         </span>
       </button>
     </section>
