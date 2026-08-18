@@ -26,10 +26,12 @@ export const windFragmentShader = /* glsl */ `
    * because this gets evaluated nine times per pixel.
    */
   float heading(vec2 p, float t) {
-    float base = fbm2(p * 1.35 + vec2(t * 0.06, -t * 0.04));
-    // A slow rotation about the middle keeps the field circulating.
+    // The sampling point itself is advected, so the whole field streams across
+    // the panel rather than shimmering in place.
+    vec2 flowing = p * 1.35 + vec2(t * 0.42, -t * 0.30);
+    float base = fbm2(flowing);
     float swirl = atan(p.y, p.x + 1e-4) * 0.35;
-    return base * 3.1 + swirl + t * 0.05;
+    return base * 3.1 + swirl + t * 0.55;
   }
 
   void main() {
@@ -38,7 +40,8 @@ export const windFragmentShader = /* glsl */ `
     // Intensity falls away with the clock: the gale settles to still air.
     float gust = clamp(uProgress, 0.0, 1.0);
     gust = mix(0.20, 1.0, gust * gust);
-    float t = uTime * mix(0.15, 1.0, gust) * mix(0.35, 1.0, uRunning);
+    // Never fully still: an idle board should still read as weather.
+    float t = uTime * mix(0.30, 1.0, gust) * mix(0.70, 1.0, uRunning);
 
     float cell = 0.0345;
     vec2 g = p / cell;
@@ -57,12 +60,15 @@ export const windFragmentShader = /* glsl */ `
         vec2 c = (id + 0.5 + jitter) * cell;
 
         // Local wind speed, plus a pocket of turbulence that drifts across.
-        float speed = fbm2(c * 2.1 + vec2(-t * 0.11, t * 0.07)) * 0.5 + 0.5;
-        vec2 eye = vec2(sin(t * 0.13) * 0.22, cos(t * 0.17) * 0.16);
+        float speed = fbm2(c * 2.1 + vec2(-t * 0.55, t * 0.38)) * 0.5 + 0.5;
+        vec2 eye = vec2(sin(t * 0.31) * 0.24, cos(t * 0.23) * 0.17);
         float churn = smoothstep(0.34, 0.06, length(c - eye)) * gust;
 
         float a = heading(c, t);
         a += churn * (hash21(id + 3.7) - 0.5) * 5.4;
+        // Gusts pass through as a travelling wave, so dashes turn in sequence
+        // rather than all at once.
+        a += sin(dot(c, vec2(2.4, -1.7)) - t * 1.6) * 0.35 * gust;
 
         speed = clamp(speed * gust + churn * 0.35, 0.0, 1.0);
 

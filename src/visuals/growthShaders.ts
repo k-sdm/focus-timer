@@ -18,6 +18,8 @@ export const growthSimShader = /* glsl */ `
   uniform float uDt;
   /** Radius of the region still being fed, in half-heights. */
   uniform float uRadius;
+  /** Storage gain, >1 when the state is packed into an 8-bit target. */
+  uniform float uScale;
 
   ${noiseChunk}
 
@@ -46,14 +48,15 @@ export const growthSimShader = /* glsl */ `
       // from a single front travelling outwards.
       float blob = 1.0 - smoothstep(0.025, 0.070, length(p));
       float jitter = hash21(vUv * 733.0) * 0.35 + 0.65;
-      gl_FragColor = vec4(1.0, clamp(blob * 0.62 * jitter, 0.0, 1.0), 0.0, 1.0);
+      gl_FragColor = vec4(1.0, clamp(blob * 0.62 * jitter * uScale, 0.0, 1.0), 0.0, 1.0);
       return;
     }
 
     vec2 s = texture2D(uState, vUv).xy;
     float a = s.x;
-    float b = s.y;
+    float b = s.y / uScale;
     vec2 lap = laplacian();
+    lap.y /= uScale;
 
     // Outside the active radius the kill rate climbs, so the structure is eaten
     // back from its own frontier rather than simply fading out. The ragged
@@ -66,7 +69,7 @@ export const growthSimShader = /* glsl */ `
     float na = a + (0.2097 * lap.x - reaction + feed * (1.0 - a)) * uDt;
     float nb = b + (0.1050 * lap.y + reaction - (kill + feed) * b) * uDt;
 
-    gl_FragColor = vec4(clamp(na, 0.0, 1.0), clamp(nb, 0.0, 1.0), 0.0, 1.0);
+    gl_FragColor = vec4(clamp(na, 0.0, 1.0), clamp(nb * uScale, 0.0, 1.0), 0.0, 1.0);
   }
 `
 
@@ -78,11 +81,12 @@ export const growthDisplayShader = /* glsl */ `
   uniform sampler2D uState;
   uniform vec2  uResolution;
   uniform float uFinish;
+  uniform float uScale;
 
   ${noiseChunk}
 
   void main() {
-    float b = texture2D(uState, vUv).y;
+    float b = texture2D(uState, vUv).y / uScale;
 
     // Hard threshold, antialiased against the local gradient — the reference is
     // ink, not a heightmap.

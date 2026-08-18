@@ -23,8 +23,8 @@ export function Foam({ frame }: VisualProps) {
       uPops: {
         value: Array.from({ length: MAX_POPS }, () => new THREE.Vector4(0, 0, 1, 0)),
       },
-      uWall: { value: 0.0105 },
-      uGap: { value: 0.017 },
+      uWall: { value: 0.0042 },
+      uMerge: { value: 0.028 },
     }),
     [],
   )

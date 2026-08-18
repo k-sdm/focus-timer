@@ -10,7 +10,13 @@ const SIM_HEIGHT = 480
  * Gray-Scott needs thousands of iterations before it reads as structure, so the
  * frontier is advanced hard each frame. The passes are 400x480 — cheap.
  */
-const STEPS_PER_FRAME = 24
+const STEPS_PER_FRAME = 30
+/**
+ * Gray-Scott needs a few thousand iterations before it reads as anything, so a
+ * fresh seed is run forward in one burst. Without this the panel spends its
+ * first seconds looking broken rather than looking empty.
+ */
+const PRIME_STEPS = 2600
 
 interface Sim {
   width: number
@@ -24,9 +30,28 @@ interface Sim {
   dispose: () => void
 }
 
-function createSim(width: number, height: number, aspect: number): Sim {
+/**
+ * RGBA16F is only colour-renderable where the float colour-buffer extension is
+ * present. Where it isn't, the framebuffer is silently incomplete and every
+ * pass is dropped — a blank white panel with nothing in the console. Fall back
+ * to 8-bit and scale the reagent up to use the range that is left.
+ */
+function pickTargetType(gl: THREE.WebGLRenderer): THREE.TextureDataType {
+  const ctx = gl.getContext()
+  const renderable =
+    ctx.getExtension('EXT_color_buffer_float') ??
+    ctx.getExtension('EXT_color_buffer_half_float')
+  return renderable ? THREE.HalfFloatType : THREE.UnsignedByteType
+}
+
+function createSim(
+  width: number,
+  height: number,
+  aspect: number,
+  type: THREE.TextureDataType,
+): Sim {
   const options: THREE.RenderTargetOptions = {
-    type: THREE.HalfFloatType,
+    type,
     format: THREE.RGBAFormat,
     minFilter: THREE.LinearFilter,
     magFilter: THREE.LinearFilter,
@@ -53,6 +78,9 @@ function createSim(width: number, height: number, aspect: number): Sim {
       uKill: { value: 0.0605 },
       uDt: { value: 1.0 },
       uRadius: { value: 1.6 },
+      // 8-bit storage quantises the reagent into uselessness at its natural
+      // range, so it is stored scaled and divided back out on read.
+      uScale: { value: type === THREE.UnsignedByteType ? 2.6 : 1.0 },
     },
     depthTest: false,
     depthWrite: false,
@@ -97,7 +125,7 @@ export function Growth({ frame }: VisualProps) {
     const current = simRef.current
     if (current && current.width === simW) return current
     current?.dispose()
-    const next = createSim(simW, SIM_HEIGHT, aspect)
+    const next = createSim(simW, SIM_HEIGHT, aspect, pickTargetType(gl))
     simRef.current = next
     return next
   }
@@ -111,7 +139,11 @@ export function Growth({ frame }: VisualProps) {
   )
 
   const display = useMemo(
-    () => ({ ...uniforms, uState: { value: null as THREE.Texture | null } }),
+    () => ({
+      ...uniforms,
+      uState: { value: null as THREE.Texture | null },
+      uScale: { value: 1 },
+    }),
     [uniforms],
   )
 
@@ -126,7 +158,8 @@ export function Growth({ frame }: VisualProps) {
     const prev = gl.getRenderTarget()
 
     // Reseed on the first frame after allocation, and on a reset.
-    if (!sim.seeded || t.progress > lastProgress.current + 0.02) {
+    const reseeding = !sim.seeded || t.progress > lastProgress.current + 0.02
+    if (reseeding) {
       sim.material.uniforms.uSeed.value = 1
       // Detach the previous state first: seeding writes to both targets, and
       // rendering into a texture the material still samples is a feedback loop,
@@ -148,7 +181,8 @@ export function Growth({ frame }: VisualProps) {
     // A touch more kill as time runs out: the frontier breaks into dots sooner.
     sim.material.uniforms.uKill.value = 0.0605 + uniforms.uUrgency.value * 0.0022
 
-    for (let i = 0; i < STEPS_PER_FRAME; i++) {
+    const steps = reseeding ? PRIME_STEPS : STEPS_PER_FRAME
+    for (let i = 0; i < steps; i++) {
       sim.material.uniforms.uState.value = sim.targets[sim.index].texture
       gl.setRenderTarget(sim.targets[1 - sim.index])
       gl.render(sim.scene, sim.camera)
@@ -157,6 +191,7 @@ export function Growth({ frame }: VisualProps) {
 
     gl.setRenderTarget(prev)
     display.uState.value = sim.targets[sim.index].texture
+    display.uScale.value = sim.material.uniforms.uScale.value as number
   })
 
   return (

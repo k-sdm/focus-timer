@@ -26,23 +26,27 @@ export const foamFragmentShader = /* glsl */ `
   uniform vec4 uPops[${MAX_POPS}];
 
   uniform float uWall;
-  uniform float uGap;
+  /** Fillet radius of the merge between neighbouring bubbles. */
+  uniform float uMerge;
 
   ${noiseChunk}
+
+  /** Polynomial smooth minimum: the union necks instead of creasing. */
+  float smin(float a, float b, float k) {
+    float h = clamp(0.5 + 0.5 * (b - a) / k, 0.0, 1.0);
+    return mix(b, a, h) - k * h * (1.0 - h);
+  }
 
   void main() {
     // Work in units where y spans [-0.5, 0.5]; x follows the panel aspect.
     vec2 p = (vUv - 0.5) * vec2(uAspect, 1.0);
 
-    float px = 1.0 / uResolution.y;
-    float aa = px * 1.4;
-
-    // Each surface is drawn in its own right, so two bubbles pressed together
-    // read as two outlines meeting rather than one silhouette swallowing the
-    // other. Alongside that, the nearest distance tells us where the curved
-    // triangles between three bubbles are.
-    float outline = 0.0;
-    float nearest = 1e6;
+    // Two fields at once: a smooth union that merges touching bubbles into one
+    // mass, and the two nearest hard distances, whose midline is the shared
+    // wall between whichever pair of bubbles owns this pixel.
+    float mass = 1e6;
+    float d1 = 1e6;
+    float d2 = 1e6;
 
     for (int i = 0; i < ${MAX_BUBBLES}; i++) {
       vec4 b = uBubbles[i];
@@ -58,16 +62,29 @@ export const foamFragmentShader = /* glsl */ `
       float r = b.z * (1.0 + b.w * cos2);
 
       float d = sqrt(qq) - r;
-      outline = max(outline, 1.0 - smoothstep(uWall - aa, uWall + aa, abs(d)));
-      nearest = min(nearest, d);
+      mass = smin(mass, d, uMerge);
+      if (d < d1) { d2 = d1; d1 = d; }
+      else if (d < d2) { d2 = d; }
     }
 
-    // Plateau borders: the pinch just outside every surface, which closes into
-    // a solid wedge wherever three bubbles come together.
-    float border = smoothstep(-aa, aa, nearest)
-                 * (1.0 - smoothstep(uGap - aa, uGap + aa, nearest));
+    float px = 1.0 / uResolution.y;
+    float aa = px * 1.3;
+    float wallPx = uWall * uResolution.y;
 
-    float ink = max(outline, border);
+    // Outer membrane of the merged mass.
+    float shell = 1.0 - smoothstep(uWall - aa, uWall + aa, abs(mass));
+
+    // Shared walls. The seam sits where the two nearest surfaces are
+    // equidistant; dividing through the local gradient holds it to a constant
+    // screen width however steeply the two fields cross.
+    float sd = d2 - d1;
+    float seamPx = sd / max(fwidth(sd), 1e-6);
+    float seam = 1.0 - smoothstep(wallPx - 0.8, wallPx + 0.8, seamPx);
+    // Only where there is actually a mass to divide. The gate is deliberately
+    // tight: a soft one leaves grey haze wherever a wall runs out to the rim.
+    seam *= smoothstep(0.0, uWall * 1.2, -mass);
+
+    float ink = max(shell, seam);
 
     // Burst rings: a single expanding pulse where a bubble used to be.
     for (int j = 0; j < ${MAX_POPS}; j++) {
@@ -76,7 +93,7 @@ export const foamFragmentShader = /* glsl */ `
       float ring = pop.w * (0.35 + 1.5 * pop.z);
       float dr = abs(length(p - pop.xy) - ring);
       float fade = (1.0 - pop.z) * (1.0 - pop.z);
-      ink = max(ink, (1.0 - smoothstep(0.0, uWall * 0.9, dr)) * fade * 0.85);
+      ink = max(ink, (1.0 - smoothstep(0.0, uWall * 1.4, dr)) * fade * 0.85);
     }
 
     vec3 col = mix(PAPER, INK, clamp(ink, 0.0, 1.0));

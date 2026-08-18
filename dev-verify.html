@@ -43,7 +43,7 @@ function growth(label, progress, steps) {
     vertexShader: fullscreenVertexShader, fragmentShader: growthSimShader,
     uniforms: { uState:{value:null}, uTexel:{value:new THREE.Vector2(1/W,1/H)},
       uAspect:{value:ASPECT}, uSeed:{value:1}, uFeed:{value:0.037},
-      uKill:{value:0.0605}, uDt:{value:1.0}, uRadius:{value:0.06+progress*0.78} },
+      uKill:{value:0.0605}, uDt:{value:1.0}, uRadius:{value:0.06+progress*0.78}, uScale:{value:1.0} },
     depthTest:false, depthWrite:false })
   const simScene = new THREE.Scene(); simScene.add(new THREE.Mesh(quad, simMat))
 
@@ -59,7 +59,7 @@ function growth(label, progress, steps) {
 
   const dispMat = new THREE.ShaderMaterial({
     vertexShader: fullscreenVertexShader, fragmentShader: growthDisplayShader,
-    uniforms:{ uState:{value:rt[i].texture}, uResolution:{value:new THREE.Vector2(W,H)}, uFinish:{value:0} },
+    uniforms:{ uState:{value:rt[i].texture}, uResolution:{value:new THREE.Vector2(W,H)}, uFinish:{value:0}, uScale:{value:1.0} },
     depthTest:false, depthWrite:false })
   const dispScene = new THREE.Scene(); dispScene.add(new THREE.Mesh(quad, dispMat))
   gl.setRenderTarget(null); gl.render(dispScene, cam)
@@ -109,18 +109,18 @@ function foam(label, progress, seconds) {
       uTime:{value:0}, uProgress:{value:progress}, uUrgency:{value:1-progress},
       uRunning:{value:1}, uArmed:{value:1}, uRemaining:{value:progress*1800}, uFinish:{value:0},
       uBubbles:{value:bubbles}, uWobble:{value:wobble}, uPops:{value:pops},
-      uWall:{value:0.0105}, uGap:{value:0.017} },
+      uWall:{value:0.0042}, uMerge:{value:0.028} },
     depthTest:false, depthWrite:false })
   const scene = new THREE.Scene(); scene.add(new THREE.Mesh(quad, mat))
   gl.render(scene, cam)
 }
 
-foam('foam p=1.0', 1.0, 6)
-foam('foam p=0.35', 0.35, 14)
+foam('foam p=1.0', 1.0, 9)
+foam('foam p=1.0 t=20s', 1.0, 20)
 growth('growth p=1.0 (20k steps)', 1.0, 20000)
 growth('growth p=0.4 (20k steps)', 0.4, 20000)
-wind('wind p=1.0', 1.0, 24)
-wind('wind p=0.25', 0.25, 24)
+wind('wind t=24', 1.0, 24)
+wind('wind t=27 (3s later)', 1.0, 27)
 document.title = 'verify done'
 </script>
 </body></html>

@@ -15,6 +15,10 @@ export interface Bubble {
   amp: number
   angle: number
   spin: number
+  /** Per-bubble phases, so no two drift or breathe together. */
+  wanderX: number
+  wanderY: number
+  breathe: number
   alive: boolean
 }
 
@@ -27,8 +31,13 @@ export interface Pop {
 
 const REPULSION = 150
 const COHESION = 3.0
-const CENTRE_PULL = 1.0
-const DAMPING = 3.4
+const CENTRE_PULL = 1.1
+/** Low enough that a nudge keeps travelling instead of dying on the spot. */
+const DAMPING = 1.5
+/** Continuous jostle, so the cluster is never still even before it is running. */
+const WANDER = 0.85
+/** Bubbles are allowed to press into each other; the merge fillet hides it. */
+const CONTACT = 0.93
 /** Soft frame the foam presses against, so it packs to the edges of the panel. */
 const WALL = 90
 const WALL_MARGIN = 0.012
@@ -58,6 +67,8 @@ function mulberry(seed: number) {
 export class FoamSim {
   bubbles: Bubble[] = []
   pops: Pop[] = []
+  /** Seconds of simulated time; drives the drift and breathing phases. */
+  time = 0
   private rand = mulberry(0x5eed)
   private aspect = 1
 
@@ -70,6 +81,7 @@ export class FoamSim {
     this.rand = mulberry(0x5eed)
     this.bubbles = []
     this.pops = []
+    this.time = 0
     const halfW = this.aspect / 2
 
     // A deliberate mix rather than a random spread: a few anchors that set the
@@ -78,9 +90,11 @@ export class FoamSim {
     for (let i = 0; i < MAX_BUBBLES; i++) {
       const t = i / (MAX_BUBBLES - 1)
       sizes.push(
+        // Nothing smaller than the merge fillet, or it is simply absorbed and
+        // renders as a solid dot rather than a bubble.
         t < 0.2 ? 0.125 + this.rand() * 0.032
-        : t < 0.62 ? 0.070 + this.rand() * 0.036
-        : 0.026 + this.rand() * 0.026,
+        : t < 0.62 ? 0.075 + this.rand() * 0.034
+        : 0.048 + this.rand() * 0.022,
       )
     }
     // Shuffle so the anchors don't all land in one corner of the seed layout.
@@ -105,6 +119,9 @@ export class FoamSim {
         amp: 0,
         angle: this.rand() * Math.PI,
         spin: (this.rand() - 0.5) * 1.6,
+        wanderX: this.rand() * Math.PI * 2,
+        wanderY: this.rand() * Math.PI * 2,
+        breathe: this.rand() * Math.PI * 2,
         alive: true,
       })
     }
@@ -155,6 +172,7 @@ export class FoamSim {
     // Stiff contact springs need small steps; three substeps keeps the packing
     // from exploding when several bubbles burst at once.
     const total = Math.min(dt, 1 / 45)
+    this.time += total
     for (let n = 0; n < SUBSTEPS; n++) this.substep(total / SUBSTEPS, shrink)
     for (const pop of this.pops) pop.age = Math.min(1, pop.age + total * 1.9)
   }
@@ -163,6 +181,12 @@ export class FoamSim {
     const bs = this.bubbles
     const halfW = this.aspect / 2 - WALL_MARGIN
     const halfH = 0.5 - WALL_MARGIN
+    const t = this.time
+
+    // The whole cluster wanders a slow Lissajous rather than sitting on the
+    // middle of the panel.
+    const driftX = Math.sin(t * 0.17) * 0.16 * this.aspect
+    const driftY = Math.cos(t * 0.13) * 0.13
 
     for (let i = 0; i < bs.length; i++) {
       const a = bs[i]
@@ -175,7 +199,7 @@ export class FoamSim {
         const dx = b.x - a.x
         const dy = b.y - a.y
         const d = Math.hypot(dx, dy) || 1e-6
-        const touch = a.r + b.r
+        const touch = (a.r + b.r) * CONTACT
         const nx = dx / d
         const ny = dy / d
 
@@ -196,9 +220,14 @@ export class FoamSim {
         }
       }
 
-      // Hold the cluster together so it contracts as bubbles are lost.
-      a.vx -= a.x * CENTRE_PULL * h
-      a.vy -= a.y * CENTRE_PULL * h
+      // Hold the cluster together, around a centre that is itself moving.
+      a.vx -= (a.x - driftX) * CENTRE_PULL * h
+      a.vy -= (a.y - driftY) * CENTRE_PULL * h
+
+      // Per-bubble jostle. Small forces, but with damping this low they keep
+      // the packing rearranging instead of freezing into one solved layout.
+      a.vx += Math.sin(t * 0.83 + a.wanderX) * WANDER * h
+      a.vy += Math.cos(t * 0.71 + a.wanderY) * WANDER * h
 
       // Soft frame: the foam fills the panel rather than floating inside it.
       if (a.x - a.r < -halfW) a.vx += (-halfW - (a.x - a.r)) * WALL * h
@@ -216,7 +245,9 @@ export class FoamSim {
       const dying = !a.alive
       const k = dying ? COLLAPSE_STIFFNESS : RADIUS_STIFFNESS
       const c = dying ? COLLAPSE_DAMPING : RADIUS_DAMPING
-      a.rest = a.alive ? a.base * shrink : 0
+      // Gentle breathing keeps the surfaces from reading as rigid discs.
+      const pulse = 1 + Math.sin(t * 1.15 + a.breathe) * 0.035
+      a.rest = a.alive ? a.base * shrink * pulse : 0
       a.rv += ((a.rest - a.r) * k - a.rv * c) * h
       a.r += a.rv * h
       if (a.r < 0.0015) {
