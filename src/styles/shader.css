@@ -52,7 +52,7 @@
   pointer-events: none;
 }
 
-.menubar__clock {
+.menubar__date {
   margin-left: 6px;
   font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', sans-serif;
   font-weight: 400;

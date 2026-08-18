@@ -1,4 +1,26 @@
+import { useEffect, useState } from 'react'
 import { MENU_BAR } from '../lib/design'
+
+/** The system's own short date, matching however the viewer's Mac writes it. */
+function today() {
+  return new Date()
+    .toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' })
+    // en-GB gives "Mon 18 Aug", en-US "Mon, Aug 18" — the bar wants neither comma.
+    .replace(/,/g, '')
+}
+
+function useToday() {
+  const [label, setLabel] = useState(today)
+
+  useEffect(() => {
+    // It only has to survive midnight, so half a minute is ample and costs
+    // nothing next to a per-second clock.
+    const id = setInterval(() => setLabel(today()), 30_000)
+    return () => clearInterval(id)
+  }, [])
+
+  return label
+}
 
 /**
  * Decorative macOS menu bar, traced from the strip in the reference comp.
@@ -74,6 +96,8 @@ function ControlCentre() {
 }
 
 export function MenuBar() {
+  const date = useToday()
+
   return (
     <>
       <div className="menubar__scrim" style={{ height: MENU_BAR.scrimHeight }} />
@@ -87,8 +111,8 @@ export function MenuBar() {
         <InputSource />
         <Search />
         <ControlCentre />
-        <span className="menubar__clock" style={{ fontSize: MENU_BAR.fontSize }}>
-          Mon 20 Jul&ensp;15:48
+        <span className="menubar__date" style={{ fontSize: MENU_BAR.fontSize }}>
+          {date}
         </span>
       </div>
     </>
