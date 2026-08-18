@@ -1,11 +1,56 @@
 .shader-panel {
   position: absolute;
   top: 0;
-  background: var(--paper);
+  background: #ffffff;
 }
 
 .shader-panel canvas {
   display: block;
   width: 100% !important;
   height: 100% !important;
+}
+
+.switcher {
+  position: absolute;
+  display: flex;
+  gap: 28px;
+  align-items: baseline;
+}
+
+.switcher__item {
+  display: flex;
+  align-items: baseline;
+  gap: 9px;
+  padding: 0;
+  border: 0;
+  background: none;
+  font-size: 22px;
+  font-weight: 300;
+  line-height: 1;
+  letter-spacing: 0.01em;
+  color: #a8a8a8;
+  cursor: pointer;
+  transition: color 160ms ease;
+}
+
+.switcher__item:hover {
+  color: #6a6a6a;
+}
+
+.switcher__item.is-active {
+  color: var(--ink);
+}
+
+.switcher__index {
+  font-size: 15px;
+  color: #c4c4c4;
+}
+
+.switcher__item.is-active .switcher__index {
+  color: #8a8a8a;
+}
+
+.switcher__item:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 6px;
 }

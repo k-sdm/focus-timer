@@ -1,0 +1,126 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>verify</title>
+<style>body{margin:0;background:#222;font:10px monospace;color:#fff}
+#row{display:grid;grid-template-columns:1fr 1fr;gap:6px;padding:6px}figure{margin:0}figcaption{padding:4px 0}
+canvas{display:block;width:190px;height:228px;background:#fff}</style>
+</head><body>
+<div class="row" id="row"></div>
+<script type="module">
+import * as THREE from 'three'
+import { fullscreenVertexShader } from '/src/visuals/common.ts'
+import { growthSimShader, growthDisplayShader } from '/src/visuals/growthShaders.ts'
+import { windFragmentShader } from '/src/visuals/windShader.ts'
+import { foamFragmentShader, MAX_BUBBLES, MAX_POPS } from '/src/visuals/foamShader.ts'
+import { FoamSim } from '/src/visuals/foamSim.ts'
+
+const W = 400, H = 480, ASPECT = W / H
+const quad = new THREE.PlaneGeometry(2, 2)
+const cam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1)
+
+function panel(label) {
+  const fig = document.createElement('figure')
+  const cap = document.createElement('figcaption')
+  cap.textContent = label
+  const canvas = document.createElement('canvas')
+  canvas.width = W; canvas.height = H
+  fig.append(canvas, cap)
+  document.getElementById('row').append(fig)
+  return canvas
+}
+
+function growth(label, progress, steps) {
+  const canvas = panel(label)
+  const gl = new THREE.WebGLRenderer({ canvas, antialias: false, alpha: false })
+  gl.setPixelRatio(1); gl.setSize(W, H, false)
+
+  const opts = { type: THREE.HalfFloatType, format: THREE.RGBAFormat,
+    minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter,
+    wrapS: THREE.ClampToEdgeWrapping, wrapT: THREE.ClampToEdgeWrapping,
+    depthBuffer: false, stencilBuffer: false }
+  const rt = [new THREE.WebGLRenderTarget(W, H, opts), new THREE.WebGLRenderTarget(W, H, opts)]
+
+  const simMat = new THREE.ShaderMaterial({
+    vertexShader: fullscreenVertexShader, fragmentShader: growthSimShader,
+    uniforms: { uState:{value:null}, uTexel:{value:new THREE.Vector2(1/W,1/H)},
+      uAspect:{value:ASPECT}, uSeed:{value:1}, uFeed:{value:0.037},
+      uKill:{value:0.0605}, uDt:{value:1.0}, uRadius:{value:0.06+progress*0.78} },
+    depthTest:false, depthWrite:false })
+  const simScene = new THREE.Scene(); simScene.add(new THREE.Mesh(quad, simMat))
+
+  simMat.uniforms.uState.value = null
+  for (const t of rt) { gl.setRenderTarget(t); gl.render(simScene, cam) }
+  simMat.uniforms.uSeed.value = 0
+
+  let i = 0
+  for (let s = 0; s < steps; s++) {
+    simMat.uniforms.uState.value = rt[i].texture
+    gl.setRenderTarget(rt[1-i]); gl.render(simScene, cam); i = 1-i
+  }
+
+  const dispMat = new THREE.ShaderMaterial({
+    vertexShader: fullscreenVertexShader, fragmentShader: growthDisplayShader,
+    uniforms:{ uState:{value:rt[i].texture}, uResolution:{value:new THREE.Vector2(W,H)}, uFinish:{value:0} },
+    depthTest:false, depthWrite:false })
+  const dispScene = new THREE.Scene(); dispScene.add(new THREE.Mesh(quad, dispMat))
+  gl.setRenderTarget(null); gl.render(dispScene, cam)
+
+  const px = new Uint8Array(4)
+  gl.getContext().readPixels(W/2, H/2, 1, 1, gl.getContext().RGBA, gl.getContext().UNSIGNED_BYTE, px)
+  console.log(label, 'centre px', [...px])
+}
+
+function wind(label, progress, time) {
+  const canvas = panel(label)
+  const gl = new THREE.WebGLRenderer({ canvas, antialias: false, alpha: false })
+  gl.setPixelRatio(1); gl.setSize(W, H, false)
+  const mat = new THREE.ShaderMaterial({
+    vertexShader: fullscreenVertexShader, fragmentShader: windFragmentShader,
+    uniforms:{ uResolution:{value:new THREE.Vector2(W,H)}, uAspect:{value:ASPECT},
+      uTime:{value:time}, uProgress:{value:progress}, uUrgency:{value:1-progress},
+      uRunning:{value:1}, uArmed:{value:1}, uRemaining:{value:progress*1800}, uFinish:{value:0} },
+    depthTest:false, depthWrite:false })
+  const scene = new THREE.Scene(); scene.add(new THREE.Mesh(quad, mat))
+  gl.render(scene, cam)
+}
+
+function foam(label, progress, seconds) {
+  const canvas = panel(label)
+  const gl = new THREE.WebGLRenderer({ canvas, antialias: false, alpha: false })
+  gl.setPixelRatio(1); gl.setSize(W, H, false)
+  const sim = new FoamSim(ASPECT)
+  const bubbles = Array.from({length: MAX_BUBBLES}, () => new THREE.Vector4())
+  const wobble  = Array.from({length: MAX_BUBBLES}, () => new THREE.Vector2(1,0))
+  const pops    = Array.from({length: MAX_POPS}, () => new THREE.Vector4(0,0,1,0))
+  const dt = 1/60
+  const wanted = Math.max(1, Math.round(progress * MAX_BUBBLES))
+  for (let f = 0; f < seconds * 60; f++) {
+    if (sim.aliveCount > wanted && f % 12 === 0) sim.pop()
+    sim.step(dt, 0.72 + 0.28 * progress)
+  }
+  for (let i = 0; i < MAX_BUBBLES; i++) {
+    const b = sim.bubbles[i]
+    bubbles[i].set(b.x, b.y, b.r, b.amp)
+    wobble[i].set(Math.cos(b.angle), Math.sin(b.angle))
+  }
+  sim.pops.forEach((p, i) => { if (i < MAX_POPS) pops[i].set(p.x, p.y, p.age, p.radius) })
+  const mat = new THREE.ShaderMaterial({
+    vertexShader: fullscreenVertexShader, fragmentShader: foamFragmentShader,
+    uniforms: { uResolution:{value:new THREE.Vector2(W,H)}, uAspect:{value:ASPECT},
+      uTime:{value:0}, uProgress:{value:progress}, uUrgency:{value:1-progress},
+      uRunning:{value:1}, uArmed:{value:1}, uRemaining:{value:progress*1800}, uFinish:{value:0},
+      uBubbles:{value:bubbles}, uWobble:{value:wobble}, uPops:{value:pops},
+      uWall:{value:0.0105}, uGap:{value:0.017} },
+    depthTest:false, depthWrite:false })
+  const scene = new THREE.Scene(); scene.add(new THREE.Mesh(quad, mat))
+  gl.render(scene, cam)
+}
+
+foam('foam p=1.0', 1.0, 6)
+foam('foam p=0.35', 0.35, 14)
+growth('growth p=1.0 (20k steps)', 1.0, 20000)
+growth('growth p=0.4 (20k steps)', 0.4, 20000)
+wind('wind p=1.0', 1.0, 24)
+wind('wind p=0.25', 0.25, 24)
+document.title = 'verify done'
+</script>
+</body></html>
