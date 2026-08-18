@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef } from 'react'
 import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
 import { approach, fullscreenVertexShader, type VisualProps } from './common'
+import { STROKE_HALF_WIDTH, VERTS_PER_SEGMENT, writeThickSegment } from './thickLines'
 import { ridged3 } from './reliefField'
 import { MAX_DURATION_SEC } from '../hooks/useTimer'
 
@@ -24,7 +25,7 @@ const passThroughVertexShader = /* glsl */ `
 
 const lineFragmentShader = /* glsl */ `
   precision highp float;
-  void main() { gl_FragColor = vec4(0.10, 0.10, 0.11, 1.0); }
+  void main() { gl_FragColor = vec4(0.08, 0.08, 0.09, 1.0); }
 `
 
 const paperFragmentShader = /* glsl */ `
@@ -43,7 +44,7 @@ const paperFragmentShader = /* glsl */ `
  * front-to-back ordering to walk.
  */
 export function Relief({ frame }: VisualProps) {
-  const { positions, surface, rings } = useMemo(() => {
+  const { positions, surface, rings, ringVerts } = useMemo(() => {
     const positions = new THREE.BufferAttribute(new Float32Array(VERTS * 3), 3)
 
     // Both geometries read the same vertices; only the topology differs.
@@ -62,17 +63,16 @@ export function Relief({ frame }: VisualProps) {
     }
     surface.setIndex(tris)
 
+    // Strokes are their own geometry: a wide line has to be built as quads,
+    // since gl_LineWidth is capped at 1.
     const rings = new THREE.BufferGeometry()
-    rings.setAttribute('position', positions)
-    const lines: number[] = []
-    for (let r = 0; r < RINGS; r++) {
-      for (let s = 0; s < SECTORS; s++) {
-        lines.push(r * SECTORS + s, r * SECTORS + ((s + 1) % SECTORS))
-      }
-    }
-    rings.setIndex(lines)
+    const ringVerts = new THREE.BufferAttribute(
+      new Float32Array(RINGS * SECTORS * VERTS_PER_SEGMENT * 3),
+      3,
+    )
+    rings.setAttribute('position', ringVerts)
 
-    return { positions, surface, rings }
+    return { positions, surface, rings, ringVerts }
   }, [])
 
   useEffect(
@@ -130,6 +130,29 @@ export function Relief({ frame }: VisualProps) {
     }
 
     positions.needsUpdate = true
+
+    // Rebuild the strokes from the freshly projected vertices.
+    const strokes = ringVerts.array as Float32Array
+    let cursor = 0
+    for (let r = 0; r < RINGS; r++) {
+      for (let sec = 0; sec < SECTORS; sec++) {
+        const a = (r * SECTORS + sec) * 3
+        const b = (r * SECTORS + ((sec + 1) % SECTORS)) * 3
+        cursor = writeThickSegment(
+          strokes,
+          cursor,
+          array[a],
+          array[a + 1],
+          array[b],
+          array[b + 1],
+          // Nudged towards the viewer so a stroke wins against the shell it
+          // sits on rather than z-fighting with it.
+          Math.min(array[a + 2], array[b + 2]) - 0.004,
+          STROKE_HALF_WIDTH * 0.62,
+        )
+      }
+    }
+    ringVerts.needsUpdate = true
   })
 
   return (
@@ -159,14 +182,15 @@ export function Relief({ frame }: VisualProps) {
         />
       </mesh>
 
-      <lineSegments frustumCulled={false} geometry={rings} renderOrder={1}>
+      <mesh frustumCulled={false} geometry={rings} renderOrder={1}>
         <shaderMaterial
           vertexShader={passThroughVertexShader}
           fragmentShader={lineFragmentShader}
           depthTest
           depthWrite={false}
+          side={THREE.DoubleSide}
         />
-      </lineSegments>
+      </mesh>
     </>
   )
 }

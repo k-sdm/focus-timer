@@ -12,6 +12,8 @@ interface Props {
   visualId: string
   /** 0 = smallest window, 1 = full screen. */
   windowSize: number
+  /** Clicking the artwork asks for a different one. */
+  onShuffle: () => void
 }
 
 /**
@@ -20,7 +22,12 @@ interface Props {
  * aspect the visuals are composed for never changes and nothing has to be
  * rebuilt while the slider is moving.
  */
-export const ShaderPanel = memo(function ShaderPanel({ frame, visualId, windowSize }: Props) {
+export const ShaderPanel = memo(function ShaderPanel({
+  frame,
+  visualId,
+  windowSize,
+  onShuffle,
+}: Props) {
   const visual = VISUALS.find((v) => v.id === visualId) ?? VISUALS[0]
   const Visual = visual.Component
 
@@ -32,7 +39,15 @@ export const ShaderPanel = memo(function ShaderPanel({ frame, visualId, windowSi
   // Offset from centre, in board pixels. Clamped on read rather than on write,
   // so growing the window pulls it back onto the screen instead of stranding it.
   const [offset, setOffset] = useState({ x: 0, y: 0 })
-  const drag = useRef({ active: false, startX: 0, startY: 0, originX: 0, originY: 0 })
+  const drag = useRef({
+    active: false,
+    startX: 0,
+    startY: 0,
+    originX: 0,
+    originY: 0,
+    /** Distinguishes a click on the artwork from the end of a window drag. */
+    travelled: 0,
+  })
 
   const slackX = Math.max(0, (SCREEN_WIDTH - width) / 2)
   const slackY = Math.max(0, (STAGE.height - height) / 2)
@@ -49,6 +64,7 @@ export const ShaderPanel = memo(function ShaderPanel({ frame, visualId, windowSi
         startY: e.clientY,
         originX: x,
         originY: y,
+        travelled: 0,
       }
     },
     [fullscreen, x, y],
@@ -61,18 +77,26 @@ export const ShaderPanel = memo(function ShaderPanel({ frame, visualId, windowSi
     // back through that scale to stay under the cursor.
     const board = e.currentTarget.getBoundingClientRect()
     const boardScale = board.width / (e.currentTarget.offsetWidth || 1)
+    d.travelled = Math.max(d.travelled, Math.hypot(e.clientX - d.startX, e.clientY - d.startY))
     setOffset({
       x: d.originX + (e.clientX - d.startX) / boardScale,
       y: d.originY + (e.clientY - d.startY) / boardScale,
     })
   }, [])
 
-  const endDrag = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
-    drag.current.active = false
-    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
-      e.currentTarget.releasePointerCapture(e.pointerId)
-    }
-  }, [])
+  const endDrag = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
+      const wasDragging = drag.current.active
+      drag.current.active = false
+      if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+        e.currentTarget.releasePointerCapture(e.pointerId)
+      }
+      // A window that was only nudged still counts as a click on the artwork.
+      if (wasDragging && drag.current.travelled < 5) onShuffle()
+      else if (!wasDragging) onShuffle()
+    },
+    [onShuffle],
+  )
 
   return (
     <div

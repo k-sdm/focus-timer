@@ -92,7 +92,9 @@
    running board is legible at a glance from across a room. */
 .panel__action.is-running {
   background: var(--muted);
-  border: 3px solid var(--white);
+  /* Not a border: that insets the padding box, and the label is positioned
+     against it, so the text dropped a few pixels on every state change. */
+  box-shadow: inset 0 0 0 3px var(--white);
   color: var(--white);
 }
 

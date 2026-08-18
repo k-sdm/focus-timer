@@ -96,7 +96,12 @@ export default function App() {
           } as React.CSSProperties
         }
       >
-        <ShaderPanel frame={timer.frame} visualId={visualId} windowSize={windowSize} />
+        <ShaderPanel
+          frame={timer.frame}
+          visualId={visualId}
+          windowSize={windowSize}
+          onShuffle={() => chooseMode(RANDOM_MODE)}
+        />
         <TimerPanel
           timer={timer}
           windowSize={windowSize}

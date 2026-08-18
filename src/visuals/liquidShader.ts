@@ -27,6 +27,8 @@ export const sandSimShader = /* glsl */ `
   uniform float uOffset;
   /** Per-cell chance of a new grain appearing in the inlet. */
   uniform float uSpawn;
+  /** Per-cell chance of a surface drop leaving, when the level must fall. */
+  uniform float uDrain;
   uniform float uTime;
   /**
    * Increments every step, so the rain is not identical within one frame.

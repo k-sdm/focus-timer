@@ -2,6 +2,7 @@ import { useEffect, useMemo } from 'react'
 import { useFrame, useThree } from '@react-three/fiber'
 import * as THREE from 'three'
 import { approach, type VisualProps } from './common'
+import { STROKE_HALF_WIDTH, VERTS_PER_SEGMENT, writeSegmentAttribute, writeThickSegment } from './thickLines'
 
 const NODES = 62
 /** Extra edges beyond the spanning tree, which is what makes it a graph. */
@@ -35,7 +36,7 @@ const edgeFragmentShader = /* glsl */ `
   varying float vAlpha;
   void main() {
     if (vAlpha <= 0.004) discard;
-    gl_FragColor = vec4(0.18, 0.18, 0.20, vAlpha * 0.5);
+    gl_FragColor = vec4(0.09, 0.09, 0.10, vAlpha * 0.72);
   }
 `
 
@@ -105,9 +106,12 @@ export function Graph({ frame }: VisualProps) {
     const edgeGeo = new THREE.BufferGeometry()
     edgeGeo.setAttribute(
       'position',
-      new THREE.BufferAttribute(new Float32Array(edges.length * 2 * 3), 3),
+      new THREE.BufferAttribute(new Float32Array(edges.length * VERTS_PER_SEGMENT * 3), 3),
     )
-    edgeGeo.setAttribute('alpha', new THREE.BufferAttribute(new Float32Array(edges.length * 2), 1))
+    edgeGeo.setAttribute(
+      'alpha',
+      new THREE.BufferAttribute(new Float32Array(edges.length * VERTS_PER_SEGMENT), 1),
+    )
 
     const nodeGeo = new THREE.BufferGeometry()
     nodeGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(NODES * 3), 3))
@@ -135,10 +139,32 @@ export function Graph({ frame }: VisualProps) {
     const wanted = Math.max(0, Math.round(Math.max(0, Math.min(1, t.progress)) * NODES))
     for (let i = 0; i < NODES; i++) nodes[i].target = i < wanted ? 1 : 0
 
+    // Energy is the clock. A graph that only loses nodes reads as static until
+    // most of them have gone; making it agitated and wide early and calm and
+    // tight late puts the countdown on screen from the first second.
+    const p = Math.max(0, Math.min(1, t.progress))
+    const agitation = 0.35 + 0.65 * p
+
     const h = Math.min(dt, 1 / 50)
     for (let i = 0; i < NODES; i++) {
       const a = nodes[i]
-      a.life = approach(a.life, a.target, 3.0, h)
+      const wasAlive = a.life > 0.02
+      a.life = approach(a.life, a.target, 3.4, h)
+
+      // The moment a node lets go, it kicks its neighbours loose so the rest of
+      // the graph visibly springs into the gap rather than just closing over.
+      if (wasAlive && a.life <= 0.02) {
+        for (const [i2, j2] of edges) {
+          const other = i2 === i ? nodes[j2] : j2 === i ? nodes[i2] : null
+          if (!other || other.life < 0.02) continue
+          const dx = other.x - a.x
+          const dy = other.y - a.y
+          const d = Math.hypot(dx, dy) || 1e-6
+          other.vx += (dx / d) * 0.55
+          other.vy += (dy / d) * 0.55
+        }
+      }
+
       if (a.life < 0.01) continue
 
       // Repulsion keeps the layout open.
@@ -148,15 +174,21 @@ export function Graph({ frame }: VisualProps) {
         const dx = a.x - b.x
         const dy = a.y - b.y
         const d2 = Math.max(dx * dx + dy * dy, 1e-5)
-        const f = Math.min(0.0030 / d2, 4.0) * a.life * b.life
+        const f = Math.min(0.0030 / d2, 4.0) * a.life * b.life * agitation
         a.vx += dx * f * h
         a.vy += dy * f * h
         b.vx -= dx * f * h
         b.vy -= dy * f * h
       }
 
-      a.vx -= a.x * 0.42 * h
-      a.vy -= a.y * 0.42 * h
+      // Pulls tighter as the clock empties, so the graph contracts as it thins.
+      const gather = 0.42 + 0.55 * (1 - p)
+      a.vx -= a.x * gather * h
+      a.vy -= a.y * gather * h
+
+      // A little jitter, strongest early, keeps the layout from freezing solid.
+      a.vx += (Math.random() - 0.5) * 0.9 * agitation * h
+      a.vy += (Math.random() - 0.5) * 0.9 * agitation * h
     }
 
     // Springs.
@@ -168,14 +200,15 @@ export function Graph({ frame }: VisualProps) {
       const dx = b.x - a.x
       const dy = b.y - a.y
       const d = Math.hypot(dx, dy) || 1e-6
-      const f = (d - 0.145) * 5.0 * live
+      const f = (d - 0.145 * agitation) * 7.5 * live
       a.vx += (dx / d) * f * h
       a.vy += (dy / d) * f * h
       b.vx -= (dx / d) * f * h
       b.vy -= (dy / d) * f * h
     }
 
-    const damp = Math.exp(-2.1 * h)
+    // Light damping: springs that settle instantly never look like springs.
+    const damp = Math.exp(-1.5 * h)
     for (const n of nodes) {
       n.vx *= damp
       n.vy *= damp
@@ -201,19 +234,23 @@ export function Graph({ frame }: VisualProps) {
     const edgeAlpha = geometries.edgeGeo.getAttribute('alpha') as THREE.BufferAttribute
     const ep = edgePos.array as Float32Array
     const ea = edgeAlpha.array as Float32Array
-    edges.forEach(([i, j], k) => {
+    let ec = 0
+    let eac = 0
+    for (const [i, j] of edges) {
       const a = nodes[i]
       const b = nodes[j]
-      ep[k * 6] = a.x * sx
-      ep[k * 6 + 1] = a.y * 2
-      ep[k * 6 + 2] = 0
-      ep[k * 6 + 3] = b.x * sx
-      ep[k * 6 + 4] = b.y * 2
-      ep[k * 6 + 5] = 0
-      const live = Math.min(a.life, b.life)
-      ea[k * 2] = live
-      ea[k * 2 + 1] = live
-    })
+      ec = writeThickSegment(
+        ep,
+        ec,
+        a.x * sx,
+        a.y * 2,
+        b.x * sx,
+        b.y * 2,
+        0,
+        STROKE_HALF_WIDTH * 0.5,
+      )
+      eac = writeSegmentAttribute(ea, eac, Math.min(a.life, b.life))
+    }
     edgePos.needsUpdate = true
     edgeAlpha.needsUpdate = true
 
@@ -232,7 +269,7 @@ export function Graph({ frame }: VisualProps) {
         />
       </mesh>
 
-      <lineSegments frustumCulled={false} geometry={geometries.edgeGeo}>
+      <mesh frustumCulled={false} geometry={geometries.edgeGeo}>
         <shaderMaterial
           vertexShader={graphVertexShader}
           fragmentShader={edgeFragmentShader}
@@ -240,8 +277,9 @@ export function Graph({ frame }: VisualProps) {
           transparent
           depthTest={false}
           depthWrite={false}
+          side={THREE.DoubleSide}
         />
-      </lineSegments>
+      </mesh>
 
       <points frustumCulled={false} geometry={geometries.nodeGeo}>
         <shaderMaterial

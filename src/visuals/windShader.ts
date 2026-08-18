@@ -41,13 +41,14 @@ export const windFragmentShader = /* glsl */ `
     vec2 p = (vUv - 0.5) * vec2(uAspect, 1.0);
 
     // Intensity falls away with the clock: the gale settles to still air.
-    float gust = clamp(uProgress, 0.0, 1.0);
-    // How far the field has settled towards a single heading. Eased so the
-    // alignment gathers through the run rather than snapping at the end.
-    float settle = pow(1.0 - gust, 1.4);
-    gust = mix(0.20, 1.0, gust * gust);
+    float left = clamp(uProgress, 0.0, 1.0);
+    // Both of these were eased, which stacked two curves on top of each other
+    // and left the first half of any run looking identical. Linear in the
+    // clock means the field is visibly calmer at halfway than at the start.
+    float settle = 1.0 - left;
+    float gust = mix(0.12, 1.0, left);
     // Never fully still: an idle board should still read as weather.
-    float t = uTime * mix(0.30, 1.0, gust) * mix(0.70, 1.0, uRunning);
+    float t = uTime * mix(0.22, 1.0, left) * mix(0.70, 1.0, uRunning);
 
     float cell = 0.0345;
     vec2 g = p / cell;
@@ -68,19 +69,21 @@ export const windFragmentShader = /* glsl */ `
         // Local wind speed, plus a pocket of turbulence that drifts across.
         float speed = fbm2(c * 2.1 + vec2(-t * 0.55, t * 0.38)) * 0.5 + 0.5;
         vec2 eye = vec2(sin(t * 0.31) * 0.24, cos(t * 0.23) * 0.17);
-        float churn = smoothstep(0.34, 0.06, length(c - eye)) * gust;
+        // Turbulence is the loudest signal in the field, so it carries the
+        // clock hardest: near-total chaos at the start, none of it at the end.
+        float churn = smoothstep(0.34, 0.06, length(c - eye)) * pow(left, 0.7);
 
         float a = heading(c, t);
-        a += churn * (hash21(id + 3.7) - 0.5) * 5.4 * (1.0 - settle);
+        a += churn * (hash21(id + 3.7) - 0.5) * 7.2;
         // Gusts pass through as a travelling wave, so dashes turn in sequence
         // rather than all at once.
-        a += sin(dot(c, vec2(2.4, -1.7)) - t * 1.6) * 0.35 * gust * (1.0 - settle);
+        a += sin(dot(c, vec2(2.4, -1.7)) - t * 1.6) * 0.5 * left;
 
         // Air coming to rest: every reading swings round to the same heading,
         // so the field ends as one set of parallel strokes.
         a = mix(a, REST_HEADING, settle);
 
-        speed = clamp(speed * gust + churn * 0.35 * (1.0 - settle), 0.0, 1.0);
+        speed = clamp(speed * gust + churn * 0.35, 0.0, 1.0);
         // Lengths even out as they align, so the end state is a regular field.
         speed = mix(speed, 0.30, settle);
 

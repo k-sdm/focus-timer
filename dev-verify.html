@@ -1,211 +1,59 @@
 <!doctype html>
 <html><head><meta charset="utf-8"><title>verify</title>
-<style>body{margin:0;background:#222;font:10px monospace;color:#fff}
-#row{display:flex;flex-wrap:wrap;gap:6px;padding:6px}figure{margin:0}figcaption{padding:4px 0}
-canvas{display:block;width:175px;height:210px;background:#fff}</style>
+<style>
+body{margin:0;background:#222;color:#fff;font:10px monospace}
+#row{display:flex;flex-wrap:wrap;gap:6px;padding:6px}
+figure{margin:0}figcaption{padding:3px 0}
+canvas{display:block;width:150px;height:180px;background:#fff}
+</style>
 </head><body>
-<div class="row" id="row"></div>
+<div id="row"></div>
 <script type="module">
 import * as THREE from 'three'
 import { fullscreenVertexShader } from '/src/visuals/common.ts'
-import { growthSimShader, growthDisplayShader } from '/src/visuals/growthShaders.ts'
 import { windFragmentShader } from '/src/visuals/windShader.ts'
+import { slicesFragmentShader } from '/src/visuals/slicesShader.ts'
 import { gridFragmentShader } from '/src/visuals/gridShader.ts'
-import { SAND_COLS, SAND_ROWS, sandSimShader, sandDisplayShader } from '/src/visuals/liquidShader.ts'
-import { foamFragmentShader, MAX_BUBBLES, MAX_POPS } from '/src/visuals/foamShader.ts'
-import { FoamSim } from '/src/visuals/foamSim.ts'
 
 const W = 400, H = 480, ASPECT = W / H
 const quad = new THREE.PlaneGeometry(2, 2)
 const cam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1)
 
-let panelIndex = -1
-function panel(label) {
-  panelIndex++
+/** Renders a pure-fragment visual at a fixed progress, with no frame loop. */
+function frag(label, shader, progress, time) {
   const fig = document.createElement('figure')
-  const cap = document.createElement('figcaption')
-  cap.textContent = label
   const canvas = document.createElement('canvas')
   canvas.width = W; canvas.height = H
+  const cap = document.createElement('figcaption')
+  cap.textContent = label
   fig.append(canvas, cap)
   document.getElementById('row').append(fig)
-  return canvas
-}
 
-function growth(label, progress, steps, dispTime = 0, dispRunning = 1) {
-  const canvas = panel(label)
-  const gl = new THREE.WebGLRenderer({ canvas, antialias: false, alpha: false, preserveDrawingBuffer: true })
-  gl.setPixelRatio(1); gl.setSize(W, H, false)
-
-  const opts = { type: THREE.HalfFloatType, format: THREE.RGBAFormat,
-    minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter,
-    wrapS: THREE.ClampToEdgeWrapping, wrapT: THREE.ClampToEdgeWrapping,
-    depthBuffer: false, stencilBuffer: false }
-  const rt = [new THREE.WebGLRenderTarget(W, H, opts), new THREE.WebGLRenderTarget(W, H, opts)]
-
-  const simMat = new THREE.ShaderMaterial({
-    vertexShader: fullscreenVertexShader, fragmentShader: growthSimShader,
-    uniforms: { uState:{value:null}, uTexel:{value:new THREE.Vector2(1/W,1/H)},
-      uAspect:{value:ASPECT}, uSeed:{value:1}, uFeed:{value:0.037},
-      uKill:{value:0.0605}, uDt:{value:1.0}, uRadius:{value:progress*0.84}, uScale:{value:1.0} },
-    depthTest:false, depthWrite:false })
-  const simScene = new THREE.Scene(); simScene.add(new THREE.Mesh(quad, simMat))
-
-  simMat.uniforms.uState.value = null
-  for (const t of rt) { gl.setRenderTarget(t); gl.render(simScene, cam) }
-  simMat.uniforms.uSeed.value = 0
-
-  let i = 0
-  for (let s = 0; s < steps; s++) {
-    simMat.uniforms.uState.value = rt[i].texture
-    gl.setRenderTarget(rt[1-i]); gl.render(simScene, cam); i = 1-i
-  }
-
-  const dispMat = new THREE.ShaderMaterial({
-    vertexShader: fullscreenVertexShader, fragmentShader: growthDisplayShader,
-    uniforms:{ uState:{value:rt[i].texture}, uResolution:{value:new THREE.Vector2(W,H)}, uTime:{value:dispTime}, uRunning:{value:dispRunning}, uFinish:{value:0}, uScale:{value:1.0} },
-    depthTest:false, depthWrite:false })
-  const dispScene = new THREE.Scene(); dispScene.add(new THREE.Mesh(quad, dispMat))
-  gl.setRenderTarget(null); gl.render(dispScene, cam)
-
-  const url = canvas.toDataURL()
-  let h = 0
-  for (let k = 0; k < url.length; k += 37) h = (h * 31 + url.charCodeAt(k)) | 0
-  document.documentElement.dataset['p' + panelIndex] = label + ' => ' + h + ':' + url.length
-}
-
-function frag(label, shader, progress, time) {
-  const canvas = panel(label)
-  const gl = new THREE.WebGLRenderer({ canvas, antialias: false, alpha: false, preserveDrawingBuffer: true })
-  gl.setPixelRatio(1); gl.setSize(W, H, false)
-  const mat = new THREE.ShaderMaterial({
-    vertexShader: fullscreenVertexShader, fragmentShader: shader,
-    uniforms:{ uResolution:{value:new THREE.Vector2(W,H)}, uAspect:{value:ASPECT},
-      uTime:{value:time}, uProgress:{value:progress}, uUrgency:{value:1-progress},
-      uRunning:{value:1}, uArmed:{value:1}, uRemaining:{value:progress*1800}, uFinish:{value:0} },
-    depthTest:false, depthWrite:false })
-  const scene = new THREE.Scene(); scene.add(new THREE.Mesh(quad, mat))
-  gl.render(scene, cam)
-  const url = canvas.toDataURL(); let h = 0
-  for (let k = 0; k < url.length; k += 37) h = (h * 31 + url.charCodeAt(k)) | 0
-  document.documentElement.dataset['p' + panelIndex] = label + ' => ' + h + ':' + url.length
-}
-
-function wind(label, progress, time) {
-  const canvas = panel(label)
   const gl = new THREE.WebGLRenderer({ canvas, antialias: false, alpha: false })
   gl.setPixelRatio(1); gl.setSize(W, H, false)
   const mat = new THREE.ShaderMaterial({
-    vertexShader: fullscreenVertexShader, fragmentShader: windFragmentShader,
-    uniforms:{ uResolution:{value:new THREE.Vector2(W,H)}, uAspect:{value:ASPECT},
-      uTime:{value:time}, uProgress:{value:progress}, uUrgency:{value:1-progress},
-      uRunning:{value:1}, uArmed:{value:1}, uRemaining:{value:progress*1800}, uFinish:{value:0} },
-    depthTest:false, depthWrite:false })
+    vertexShader: fullscreenVertexShader,
+    fragmentShader: shader,
+    uniforms: {
+      uResolution: { value: new THREE.Vector2(W, H) },
+      uAspect: { value: ASPECT },
+      uTime: { value: time },
+      uProgress: { value: progress },
+      uUrgency: { value: 1 - progress },
+      uRunning: { value: 1 },
+      uArmed: { value: 1 },
+      uRemaining: { value: progress * 1800 },
+      uFinish: { value: 0 },
+    },
+    depthTest: false, depthWrite: false,
+  })
   const scene = new THREE.Scene(); scene.add(new THREE.Mesh(quad, mat))
   gl.render(scene, cam)
 }
 
-function foam(label, progress, seconds) {
-  const canvas = panel(label)
-  const gl = new THREE.WebGLRenderer({ canvas, antialias: false, alpha: false })
-  gl.setPixelRatio(1); gl.setSize(W, H, false)
-  const sim = new FoamSim(ASPECT)
-  const bubbles = Array.from({length: MAX_BUBBLES}, () => new THREE.Vector4())
-  const wobble  = Array.from({length: MAX_BUBBLES}, () => new THREE.Vector2(1,0))
-  const pops    = Array.from({length: MAX_POPS}, () => new THREE.Vector4(0,0,1,0))
-  const dt = 1/60
-  const wanted = Math.max(1, Math.round(progress * MAX_BUBBLES))
-  for (let f = 0; f < seconds * 60; f++) {
-    if (sim.aliveCount > wanted && f % 12 === 0) sim.pop()
-    sim.step(dt, 0.72 + 0.28 * progress)
-  }
-  for (let i = 0; i < MAX_BUBBLES; i++) {
-    const b = sim.bubbles[i]
-    bubbles[i].set(b.x, b.y, b.r, b.amp)
-    wobble[i].set(Math.cos(b.angle), Math.sin(b.angle))
-  }
-  sim.pops.forEach((p, i) => { if (i < MAX_POPS) pops[i].set(p.x, p.y, p.age, p.radius) })
-  const mat = new THREE.ShaderMaterial({
-    vertexShader: fullscreenVertexShader, fragmentShader: foamFragmentShader,
-    uniforms: { uResolution:{value:new THREE.Vector2(W,H)}, uAspect:{value:ASPECT},
-      uTime:{value:0}, uProgress:{value:progress}, uUrgency:{value:1-progress},
-      uRunning:{value:1}, uArmed:{value:1}, uRemaining:{value:progress*1800}, uFinish:{value:0},
-      uBubbles:{value:bubbles}, uWobble:{value:wobble}, uPops:{value:pops},
-      uWall:{value:0.0042}, uMerge:{value:0.028} },
-    depthTest:false, depthWrite:false })
-  const scene = new THREE.Scene(); scene.add(new THREE.Mesh(quad, mat))
-  gl.render(scene, cam)
-}
-
-// Same simulated state, two display times, clock stopped: the wiggle must move
-// the drawing even though the reaction is frozen.
-/** Runs the liquid automaton exactly as the component does, but synchronously. */
-function water(label, endProgress, frames) {
-  const canvas = panel(label)
-  const gl = new THREE.WebGLRenderer({ canvas, antialias: false, alpha: false, preserveDrawingBuffer: true })
-  gl.setPixelRatio(1); gl.setSize(W, H, false)
-
-  const W2 = SAND_COLS, H2 = SAND_ROWS
-  const opts = { type: THREE.UnsignedByteType, format: THREE.RGBAFormat,
-    minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter,
-    wrapS: THREE.ClampToEdgeWrapping, wrapT: THREE.ClampToEdgeWrapping,
-    depthBuffer: false, stencilBuffer: false }
-  const rt = [new THREE.WebGLRenderTarget(W2, H2, opts), new THREE.WebGLRenderTarget(W2, H2, opts)]
-
-  const sim = new THREE.ShaderMaterial({
-    vertexShader: fullscreenVertexShader, fragmentShader: sandSimShader,
-    uniforms: { uState:{value:null}, uGrid:{value:new THREE.Vector2(W2,H2)},
-      uOffset:{value:0}, uSpawn:{value:0}, uTime:{value:0}, uStep:{value:0}, uReset:{value:1} },
-    depthTest:false, depthWrite:false })
-  const simScene = new THREE.Scene(); simScene.add(new THREE.Mesh(quad, sim))
-
-  for (const t of rt) { gl.setRenderTarget(t); gl.render(simScene, cam) }
-  sim.uniforms.uReset.value = 0
-
-  const CELLS = W2 * H2, PACKED = 0.94, INLET = W2 * 2, STEPS = 8
-  let idx = 0, grains = 0, step = 0
-  const rampFor = Math.floor(frames * 0.55)
-
-  for (let f = 0; f < frames; f++) {
-    const progress = 1 - Math.min(1, f / rampFor) * (1 - endProgress)
-    const target = CELLS * PACKED * (1 - progress)
-    const spawn = Math.min(1, Math.max(0, target - grains) / (INLET * STEPS))
-    grains = Math.min(CELLS * PACKED, grains + spawn * INLET * STEPS * 0.85)
-    sim.uniforms.uSpawn.value = spawn
-    sim.uniforms.uTime.value = f / 60
-
-    for (let i = 0; i < STEPS; i++) {
-      sim.uniforms.uState.value = rt[idx].texture
-      sim.uniforms.uOffset.value = i % 2
-      sim.uniforms.uStep.value = (step = (step + 1) % 4096)
-      gl.setRenderTarget(rt[1-idx]); gl.render(simScene, cam); idx = 1-idx
-    }
-  }
-
-  const disp = new THREE.ShaderMaterial({
-    vertexShader: fullscreenVertexShader, fragmentShader: sandDisplayShader,
-    uniforms:{ uState:{value:rt[idx].texture}, uGrid:{value:new THREE.Vector2(W2,H2)},
-      uResolution:{value:new THREE.Vector2(W,H)}, uFinish:{value:0} },
-    depthTest:false, depthWrite:false })
-  const dScene = new THREE.Scene(); dScene.add(new THREE.Mesh(quad, disp))
-  gl.setRenderTarget(null); gl.render(dScene, cam)
-
-  const buf = new Uint8Array(W2 * H2 * 4)
-  gl.readRenderTargetPixels(rt[idx], 0, 0, W2, H2, buf)
-  let live = 0, top = 0
-  for (let k = 0; k < W2 * H2; k++) {
-    if (buf[k * 4] > 127) { live++; if (k >= (H2 - 2) * W2) top++ }
-  }
-  document.documentElement.dataset['p' + panelIndex] =
-    label + ' cells=' + live + '/' + (W2 * H2) + ' topRows=' + top +
-    ' lastSpawn=' + sim.uniforms.uSpawn.value.toFixed(5) + ' grains=' + Math.round(grains)
-}
-
-water('water 25% (t=6s)', 0.75, 360)
-water('water 60% (t=10s)', 0.40, 600)
-water('water 90% (t=14s)', 0.10, 840)
-water('water 90% (t=18s)', 0.10, 1080)
-
+for (const p of [1.0, 0.75, 0.5, 0.25, 0.02]) frag('wind ' + p, windFragmentShader, p, 20)
+for (const p of [1.0, 0.6, 0.25, 0.02]) frag('slices ' + p, slicesFragmentShader, p, 6)
+for (const p of [1.0, 0.5, 0.02]) frag('grid ' + p, gridFragmentShader, p, 5)
 
 document.title = 'verify done'
 </script>

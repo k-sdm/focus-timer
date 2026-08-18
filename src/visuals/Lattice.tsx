@@ -3,9 +3,10 @@ import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
 import { approach, clipVertexShader, type VisualProps } from './common'
 import { noise3 } from './reliefField'
+import { STROKE_HALF_WIDTH, VERTS_PER_SEGMENT, writeThickSegment } from './thickLines'
 
-const COLS = 30
-const ROWS = 36
+const COLS = 34
+const ROWS = 41
 /** Drifting attractors that pull the grid lines into knots. */
 const KNOTS = 7
 
@@ -13,7 +14,7 @@ const SEGMENTS = COLS * (ROWS - 1) + ROWS * (COLS - 1)
 
 const lineFragmentShader = /* glsl */ `
   precision highp float;
-  void main() { gl_FragColor = vec4(0.24, 0.24, 0.26, 1.0); }
+  void main() { gl_FragColor = vec4(0.09, 0.09, 0.10, 1.0); }
 `
 
 const paperFragmentShader = /* glsl */ `
@@ -32,7 +33,7 @@ export function Lattice({ frame }: VisualProps) {
     const g = new THREE.BufferGeometry()
     g.setAttribute(
       'position',
-      new THREE.BufferAttribute(new Float32Array(SEGMENTS * 2 * 3), 3),
+      new THREE.BufferAttribute(new Float32Array(SEGMENTS * VERTS_PER_SEGMENT * 3), 3),
     )
     return g
   }, [])
@@ -57,8 +58,8 @@ export function Lattice({ frame }: VisualProps) {
     const knots: number[] = []
     for (let k = 0; k < KNOTS; k++) {
       knots.push(
-        noise3(k * 7.31 + 2.1, 0.5, s.time * 0.05 + k) * 0.62,
-        noise3(0.5, k * 5.17 + 8.8, s.time * 0.045 + k * 3.3) * 0.78,
+        noise3(k * 7.31 + 2.1, 0.5, s.time * 0.05 + k) * 0.9,
+        noise3(0.5, k * 5.17 + 8.8, s.time * 0.045 + k * 3.3) * 1.0,
         0.16 + 0.12 * (0.5 + 0.5 * Math.sin(k * 2.4 + s.time * 0.2)),
       )
     }
@@ -66,8 +67,10 @@ export function Lattice({ frame }: VisualProps) {
     for (let r = 0; r < ROWS; r++) {
       for (let c = 0; c < COLS; c++) {
         const i = (r * COLS + c) * 2
-        let x = (c / (COLS - 1) - 0.5) * 1.64
-        let y = (r / (ROWS - 1) - 0.5) * 1.9
+        // Overscans the frame, so the knots can pull vertices inward without
+        // stripping the grid off the edges.
+        let x = (c / (COLS - 1) - 0.5) * 2.36
+        let y = (r / (ROWS - 1) - 0.5) * 2.36
 
         // Base wobble so even the mid-tangle state reads as woven, not warped.
         x += noise3(x * 2.1, y * 2.1, s.time * 0.07) * 0.05 * tangle
@@ -94,12 +97,16 @@ export function Lattice({ frame }: VisualProps) {
     const array = positions.array as Float32Array
     let cursor = 0
     const put = (a: number, b: number) => {
-      array[cursor++] = verts[a]
-      array[cursor++] = verts[a + 1]
-      array[cursor++] = 0
-      array[cursor++] = verts[b]
-      array[cursor++] = verts[b + 1]
-      array[cursor++] = 0
+      cursor = writeThickSegment(
+        array,
+        cursor,
+        verts[a],
+        verts[a + 1],
+        verts[b],
+        verts[b + 1],
+        0,
+        STROKE_HALF_WIDTH,
+      )
     }
     for (let r = 0; r < ROWS; r++)
       for (let c = 0; c < COLS - 1; c++)
@@ -122,14 +129,14 @@ export function Lattice({ frame }: VisualProps) {
           depthWrite={false}
         />
       </mesh>
-      <lineSegments frustumCulled={false} geometry={geometry}>
+      <mesh frustumCulled={false} geometry={geometry}>
         <shaderMaterial
           vertexShader={clipVertexShader}
           fragmentShader={lineFragmentShader}
           depthTest={false}
           depthWrite={false}
         />
-      </lineSegments>
+      </mesh>
     </>
   )
 }
