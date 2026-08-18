@@ -43,3 +43,32 @@ export function fbm3(x: number, y: number, z: number, octaves = 3): number {
   }
   return sum
 }
+
+/**
+ * Ridged multifractal: `1 - |noise|` creases the field along its zero crossings,
+ * which is what turns smooth hills into sharp ridges and peaks. `detail` fades
+ * the finer octaves out first, so the terrain erodes — losing its jaggedness
+ * before it loses its height — rather than simply being scaled down.
+ */
+export function ridged3(x: number, y: number, z: number, detail: number): number {
+  let sum = 0
+  let amp = 0.5
+  let freq = 1
+  let weight = 1
+  let norm = 0
+
+  for (let i = 0; i < 4; i++) {
+    let n = 1 - Math.abs(noise3(x * freq, y * freq, z * freq))
+    n *= n
+    n *= weight
+    weight = Math.max(0, Math.min(1, n * 2.2))
+
+    const octave = i === 0 ? 1 : Math.pow(detail, 1 + i * 0.55)
+    sum += n * amp * octave
+    norm += amp
+    freq *= 2.05
+    amp *= 0.5
+  }
+
+  return sum / norm
+}

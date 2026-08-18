@@ -1,26 +1,30 @@
-import { useMemo, useRef } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
 import { approach, fullscreenVertexShader, type VisualProps } from './common'
-import { fbm3 } from './reliefField'
+import { ridged3 } from './reliefField'
 import { MAX_DURATION_SEC } from '../hooks/useTimer'
 
-const ROWS = 34
-const COLS = 156
-const MAX_SEGMENTS = ROWS * (COLS - 1)
+/** Concentric rings, sampled all the way round. */
+const RINGS = 40
+const SECTORS = 132
+const VERTS = RINGS * SECTORS
 
-/** Extent of the plot in clip space. */
-const LEFT = -0.88
-const RIGHT = 0.88
-const FRONT_Y = -0.74
-const BACK_Y = 0.54
-/** Rows narrow towards the back, which is the only depth cue a flat plot gets. */
-const BACK_SQUEEZE = 0.8
-const MAX_AMPLITUDE = 0.42
+/** Cavalier projection: x across, depth receding, height up. */
+const SCALE_X = 0.82
+const SCALE_DEPTH = 0.30
+const SCALE_HEIGHT = 0.80
+const BASE_Y = -0.34
+const MAX_AMPLITUDE = 1.0
+
+/** Positions arrive already in clip space, so the camera plays no part. */
+const passThroughVertexShader = /* glsl */ `
+  void main() { gl_Position = vec4(position.xyz, 1.0); }
+`
 
 const lineFragmentShader = /* glsl */ `
   precision highp float;
-  void main() { gl_FragColor = vec4(0.055, 0.058, 0.066, 1.0); }
+  void main() { gl_FragColor = vec4(0.10, 0.10, 0.11, 1.0); }
 `
 
 const paperFragmentShader = /* glsl */ `
@@ -29,31 +33,54 @@ const paperFragmentShader = /* glsl */ `
 `
 
 /**
- * Stacked ridgelines through a 3D noise field, in the manner of the Unknown
- * Pleasures plot. Hidden-line removal is the floating-horizon algorithm: walk
- * the rows from front to back holding the highest silhouette reached in each
- * column, and draw only what clears it. Doing this on the CPU costs one pass
- * over ~5k points a frame and leaves a single draw call, where resolving it per
- * pixel would mean evaluating every row's height at every pixel.
+ * A relief of an island, drawn as the contour rings running round it.
+ *
+ * Hidden surfaces are resolved by the depth buffer rather than by a horizon
+ * scan: the terrain is also rendered as an opaque white shell that writes depth
+ * but no visible colour, and the rings are drawn against it. That works for a
+ * closed form, where a floating-horizon pass over rows does not — a ring
+ * crosses in front of and behind the peaks within a single line, so there is no
+ * front-to-back ordering to walk.
  */
 export function Relief({ frame }: VisualProps) {
-  const geometry = useMemo(() => {
-    const g = new THREE.BufferGeometry()
-    g.setAttribute(
-      'position',
-      new THREE.BufferAttribute(new Float32Array(MAX_SEGMENTS * 2 * 3), 3),
-    )
-    g.setDrawRange(0, 0)
-    return g
+  const { positions, surface, rings } = useMemo(() => {
+    const positions = new THREE.BufferAttribute(new Float32Array(VERTS * 3), 3)
+
+    // Both geometries read the same vertices; only the topology differs.
+    const surface = new THREE.BufferGeometry()
+    surface.setAttribute('position', positions)
+    const tris: number[] = []
+    for (let r = 0; r < RINGS - 1; r++) {
+      for (let s = 0; s < SECTORS; s++) {
+        const s1 = (s + 1) % SECTORS
+        const a = r * SECTORS + s
+        const b = r * SECTORS + s1
+        const c = (r + 1) * SECTORS + s
+        const d = (r + 1) * SECTORS + s1
+        tris.push(a, c, b, b, c, d)
+      }
+    }
+    surface.setIndex(tris)
+
+    const rings = new THREE.BufferGeometry()
+    rings.setAttribute('position', positions)
+    const lines: number[] = []
+    for (let r = 0; r < RINGS; r++) {
+      for (let s = 0; s < SECTORS; s++) {
+        lines.push(r * SECTORS + s, r * SECTORS + ((s + 1) % SECTORS))
+      }
+    }
+    rings.setIndex(lines)
+
+    return { positions, surface, rings }
   }, [])
 
-  const scratch = useMemo(
-    () => ({
-      horizon: new Float32Array(COLS),
-      y: new Float32Array(COLS),
-      visible: new Uint8Array(COLS),
-    }),
-    [],
+  useEffect(
+    () => () => {
+      surface.dispose()
+      rings.dispose()
+    },
+    [surface, rings],
   )
 
   const state = useRef({ time: 0, amplitude: 0 })
@@ -64,63 +91,44 @@ export function Relief({ frame }: VisualProps) {
     const s = state.current
     s.time += dt
 
-    // Relief flattens as the clock empties; at the buzzer the rows are level
-    // and parallel.
     const target = Math.max(0, Math.min(1, t.progress))
-    s.amplitude = approach(s.amplitude, target, 2.5, dt)
-    // A longer timer earns a slightly taller landscape.
-    const amp = MAX_AMPLITUDE * s.amplitude * (0.75 + 0.25 * (t.duration / MAX_DURATION_SEC))
+    s.amplitude = approach(s.amplitude, target, 2.2, dt)
+    const amp =
+      MAX_AMPLITUDE * s.amplitude * (0.78 + 0.22 * (t.duration / MAX_DURATION_SEC))
+    // Fine detail goes before height does, so the island wears down rather than
+    // simply sinking.
+    const detail = Math.pow(s.amplitude, 0.75)
 
-    const positions = geometry.getAttribute('position') as THREE.BufferAttribute
     const array = positions.array as Float32Array
-    const { horizon, y, visible } = scratch
+    let i = 0
 
-    horizon.fill(-Infinity)
-    let cursor = 0
+    for (let r = 0; r < RINGS; r++) {
+      const rr = r / (RINGS - 1)
 
-    for (let r = 0; r < ROWS; r++) {
-      const rowT = r / (ROWS - 1)
-      const baseY = FRONT_Y + (BACK_Y - FRONT_Y) * rowT
-      const squeeze = 1 - (1 - BACK_SQUEEZE) * rowT
+      // Island profile: a steep core carrying the peaks, ringed by a broad low
+      // shelf so the form sits on a shoal rather than rising out of nothing.
+      const core = Math.max(0, 1 - rr)
+      const shelf =
+        0.20 *
+        Math.max(0, Math.min(1, (1.02 - rr) / 0.30)) *
+        Math.max(0, Math.min(1, (rr - 0.46) / 0.26))
+      const env = Math.pow(core, 1.7) + shelf
 
-      for (let c = 0; c < COLS; c++) {
-        const colT = c / (COLS - 1)
-        const nx = (colT - 0.5) * 2
+      for (let sec = 0; sec < SECTORS; sec++) {
+        const a = (sec / SECTORS) * Math.PI * 2
+        const x = Math.cos(a) * rr
+        const depth = Math.sin(a) * rr
 
-        // A mound in the middle of the plot, so the rows read as one landform.
-        const d = Math.hypot(nx * 1.05, (rowT - 0.42) * 1.9)
-        const envelope = Math.max(0, 1 - d)
-        const env = envelope * envelope
+        const h = ridged3(x * 1.9, depth * 1.9, s.time * 0.16, detail) * env * amp
 
-        // Value-noise fbm lands around +/-0.4. Rectified and given a shoulder,
-        // it becomes the upward spikes the plot is built on rather than a
-        // symmetrical wobble either side of the baseline.
-        const n = fbm3(nx * 1.9, rowT * 2.6, s.time * 0.22)
-        const spike = Math.max(0, n + 0.10) * 2.4
-        const h = Math.pow(spike, 1.35)
-        y[c] = baseY + h * env * amp
-      }
-
-      for (let c = 0; c < COLS; c++) {
-        visible[c] = y[c] > horizon[c] ? 1 : 0
-        if (y[c] > horizon[c]) horizon[c] = y[c]
-      }
-
-      for (let c = 0; c < COLS - 1; c++) {
-        if (!visible[c] || !visible[c + 1]) continue
-        const x0 = LEFT + (RIGHT - LEFT) * (c / (COLS - 1))
-        const x1 = LEFT + (RIGHT - LEFT) * ((c + 1) / (COLS - 1))
-        array[cursor++] = x0 * squeeze
-        array[cursor++] = y[c]
-        array[cursor++] = 0
-        array[cursor++] = x1 * squeeze
-        array[cursor++] = y[c + 1]
-        array[cursor++] = 0
+        array[i++] = x * SCALE_X
+        array[i++] = depth * SCALE_DEPTH + h * SCALE_HEIGHT + BASE_Y
+        // Nearer the viewer is a smaller depth value; height barely tilts it.
+        array[i++] = depth * 0.42
       }
     }
 
     positions.needsUpdate = true
-    geometry.setDrawRange(0, cursor / 3)
   })
 
   return (
@@ -135,11 +143,26 @@ export function Relief({ frame }: VisualProps) {
         />
       </mesh>
 
-      <lineSegments frustumCulled={false} geometry={geometry}>
+      {/* Depth-only shell. Paints white so it is invisible against the page, but
+          it is what hides the rings running behind the far side of the form. */}
+      <mesh frustumCulled={false} geometry={surface} renderOrder={0}>
         <shaderMaterial
-          vertexShader={fullscreenVertexShader}
+          vertexShader={passThroughVertexShader}
+          fragmentShader={paperFragmentShader}
+          depthTest
+          depthWrite
+          polygonOffset
+          polygonOffsetFactor={1}
+          polygonOffsetUnits={1}
+          side={THREE.DoubleSide}
+        />
+      </mesh>
+
+      <lineSegments frustumCulled={false} geometry={rings} renderOrder={1}>
+        <shaderMaterial
+          vertexShader={passThroughVertexShader}
           fragmentShader={lineFragmentShader}
-          depthTest={false}
+          depthTest
           depthWrite={false}
         />
       </lineSegments>

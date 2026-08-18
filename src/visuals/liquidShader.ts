@@ -1,69 +1,121 @@
 import { noiseChunk } from './common'
 
-export const liquidFragmentShader = /* glsl */ `
+export const SAND_COLS = 150
+export const SAND_ROWS = 180
+
+/**
+ * Falling-sand cellular automaton on a Margolus (block) neighbourhood: the grid
+ * is partitioned into 2x2 blocks whose origin alternates between (0,0) and
+ * (1,1) each step, and grains are moved *within* a block. That partitioning is
+ * what makes sand work on a GPU at all — every cell can decide its own next
+ * value from its block alone, so no grain is ever duplicated or lost, which a
+ * naive per-cell "look at the neighbour above" rule cannot guarantee.
+ */
+export const sandSimShader = /* glsl */ `
   precision highp float;
 
   varying vec2 vUv;
 
-  uniform vec2  uResolution;
-  uniform float uAspect;
+  uniform sampler2D uState;
+  uniform vec2  uGrid;
+  /** 0 or 1: alternates the block partition each step. */
+  uniform float uOffset;
+  /** Per-cell chance of a new grain appearing in the inlet. */
+  uniform float uSpawn;
   uniform float uTime;
-  uniform float uProgress;
-  uniform float uUrgency;
-  uniform float uRunning;
-  uniform float uArmed;
-  uniform float uRemaining;
+  uniform float uReset;
+
+  ${noiseChunk}
+
+  /**
+   * 0 empty, 1 grain, 2 wall. Walls have to be a distinct state rather than
+   * "occupied": treat the outside as a grain and every boundary becomes an
+   * infinite source, pouring material into the grid from all four sides.
+   */
+  float cellAt(vec2 c) {
+    if (c.x < 0.0 || c.y < 0.0 || c.x >= uGrid.x || c.y >= uGrid.y) return 2.0;
+    return texture2D(uState, (c + 0.5) / uGrid).r > 0.5 ? 1.0 : 0.0;
+  }
+
+  bool isGrain(float v) { return v > 0.5 && v < 1.5; }
+  bool isEmpty(float v) { return v < 0.5; }
+
+  void main() {
+    if (uReset > 0.5) {
+      gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0);
+      return;
+    }
+
+    vec2 c = floor(vUv * uGrid);
+    vec2 b = floor((c - uOffset) * 0.5) * 2.0 + uOffset;
+    vec2 local = c - b;
+
+    float bl = cellAt(b);
+    float br = cellAt(b + vec2(1.0, 0.0));
+    float tl = cellAt(b + vec2(0.0, 1.0));
+    float tr = cellAt(b + vec2(1.0, 1.0));
+
+    // Straight down first.
+    if (isGrain(tl) && isEmpty(bl)) { bl = 1.0; tl = 0.0; }
+    if (isGrain(tr) && isEmpty(br)) { br = 1.0; tr = 0.0; }
+
+    // Then the slide onto a shoulder. Which side is tried first alternates per
+    // block, otherwise every pile leans the same way.
+    float coin = hash21(b + floor(uTime * 60.0) * 0.017);
+    if (coin < 0.5) {
+      if (isGrain(tl) && !isEmpty(bl) && isEmpty(br)) { br = 1.0; tl = 0.0; }
+      else if (isGrain(tr) && !isEmpty(br) && isEmpty(bl)) { bl = 1.0; tr = 0.0; }
+    } else {
+      if (isGrain(tr) && !isEmpty(br) && isEmpty(bl)) { bl = 1.0; tr = 0.0; }
+      else if (isGrain(tl) && !isEmpty(bl) && isEmpty(br)) { br = 1.0; tl = 0.0; }
+    }
+
+    float value = mix(mix(bl, br, local.x), mix(tl, tr, local.x), local.y);
+    // Never write the wall sentinel back into the grid.
+    value = isGrain(value) ? 1.0 : 0.0;
+
+    // Inlet: a narrow column at the top, so the grid fills from a single
+    // dropping stream the way a sand timer does.
+    // Three cells wide and one deep: a thread, not a shower. Widening it just
+    // scatters the same metered number of grains over more columns.
+    float inlet = step(abs(c.x - uGrid.x * 0.5), 1.0) * step(uGrid.y - 1.5, c.y);
+    if (inlet > 0.5 && value < 0.5 && hash21(c + uTime * 7.3) < uSpawn) {
+      value = 1.0;
+    }
+
+    gl_FragColor = vec4(value, 0.0, 0.0, 1.0);
+  }
+`
+
+export const sandDisplayShader = /* glsl */ `
+  precision highp float;
+
+  varying vec2 vUv;
+
+  uniform sampler2D uState;
+  uniform vec2  uGrid;
+  uniform vec2  uResolution;
   uniform float uFinish;
 
   ${noiseChunk}
 
   void main() {
-    vec2 p = vUv;
+    vec2 g = vUv * uGrid;
+    vec2 id = floor(g);
+    vec2 f = fract(g) - 0.5;
 
-    // The vessel fills as the clock empties: brim-full at the buzzer.
-    float fill = 1.0 - clamp(uProgress, 0.0, 1.0);
-    // Never quite empty: a shallow pool keeps the surface alive while the board
-    // is sitting armed.
-    float level = mix(0.035, 1.06, fill);
+    float filled = texture2D(uState, (id + 0.5) / uGrid).r;
 
-    float t = uTime;
-    // More agitation early, when the surface is a long way from the brim, and a
-    // little more again as the clock runs down.
-    float agitation = mix(0.35, 1.0, uRunning) * (0.55 + 0.45 * uUrgency);
+    // Grains vary a little in size so the pile reads as loose material rather
+    // than a screen-door pattern.
+    float radius = 0.38 + hash21(id) * 0.10;
+    float d = length(f);
+    // One cell spans this many device pixels, which sets the edge softness.
+    float aa = 1.15 / (uResolution.y / uGrid.y);
+    float grain = 1.0 - smoothstep(radius - aa, radius + aa, d);
 
-    // A few harmonics plus a slow bodily slosh, so it reads as liquid rather
-    // than a rising rectangle.
-    float w = 0.0;
-    w += sin(p.x * 6.2 + t * 1.05) * 0.021;
-    w += sin(p.x * 11.7 - t * 1.55) * 0.011;
-    w += sin(p.x * 21.3 + t * 2.30) * 0.005;
-    w += vnoise(vec2(p.x * 3.1, t * 0.34)) * 0.019;
-    w += (p.x - 0.5) * sin(t * 0.62) * 0.038;
-
-    float surface = level + w * agitation;
-    float aa = 1.6 / uResolution.y;
-    float ink = 1.0 - smoothstep(surface - aa, surface + aa, p.y);
-
-    // Bubbles rising through the body, punched out of the fill.
-    for (int i = 0; i < 8; i++) {
-      float fi = float(i);
-      float seed = hash21(vec2(fi, 3.7));
-      float lane = hash21(vec2(fi, 11.1));
-      float rise = fract(seed * 7.3 + t * (0.05 + seed * 0.10));
-      float radius = 0.009 + seed * 0.017;
-
-      vec2 centre = vec2(
-        0.10 + 0.80 * lane + sin(t * (0.6 + seed) + fi) * 0.018,
-        rise * max(surface - radius * 2.0, 0.0));
-
-      float d = length((p - centre) * vec2(uAspect, 1.0));
-      // Fades in near the floor and pops just under the surface.
-      float alive = smoothstep(0.0, 0.12, rise) * (1.0 - smoothstep(0.86, 1.0, rise));
-      ink = min(ink, 1.0 - (1.0 - smoothstep(radius - aa, radius + aa, d)) * alive);
-    }
-
-    vec3 col = mix(PAPER, INK, clamp(ink, 0.0, 1.0));
-    col = mix(col, PAPER, clamp(uFinish, 0.0, 1.0) * 0.55);
+    vec3 col = mix(PAPER, INK, grain * filled);
+    col = mix(col, PAPER, clamp(uFinish, 0.0, 1.0) * 0.5);
     gl_FragColor = vec4(col, 1.0);
   }
 `
